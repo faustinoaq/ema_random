@@ -5,6 +5,7 @@ Minimal EMA study admin app:
 - SQLite
 - APScheduler
 - UI served by FastAPI (`ui`)
+- Simple session auth using env username/password
 
 ## Architecture Flow
 
@@ -52,10 +53,23 @@ Research Staff (Browser)
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 uvicorn server.main:app --reload
 ```
 
 Open: `http://127.0.0.1:8000`
+
+## Auth
+
+API routes are protected with session auth (`/api/*` except auth endpoints).
+The UI shows a sign-in modal and creates an authenticated session cookie.
+
+Set credentials in `.env`:
+
+```env
+APP_AUTH_USERNAME=admin
+APP_AUTH_PASSWORD=change_me
+```
 
 ## API
 

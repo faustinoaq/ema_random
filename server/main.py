@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import json
 import random
+import os
+import secrets
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .db import get_conn, init_db
 from .schemas import ParticipantIn, StudyIn
@@ -25,7 +30,67 @@ app.add_middleware(
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "ui"
+load_dotenv(BASE_DIR / ".env")
 scheduler = BackgroundScheduler()
+AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
+AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "admin")
+SESSION_COOKIE_NAME = "ema_session"
+ACTIVE_SESSIONS: set[str] = set()
+LOGIN_DELAY_SECONDS = 1
+
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    public_paths = {"/", "/api/auth/login", "/api/auth/status"}
+    if request.url.path in public_paths or request.url.path.startswith("/static/"):
+        return await call_next(request)
+
+    if request.url.path.startswith("/api/"):
+        session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+        if session_token not in ACTIVE_SESSIONS:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    return await call_next(request)
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload, response: Response):
+    time.sleep(LOGIN_DELAY_SECONDS)
+    if not (
+        secrets.compare_digest(payload.username, AUTH_USERNAME)
+        and secrets.compare_digest(payload.password, AUTH_PASSWORD)
+    ):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = secrets.token_urlsafe(32)
+    ACTIVE_SESSIONS.add(token)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 12,
+    )
+    return {"ok": True}
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    return {"authenticated": session_token in ACTIVE_SESSIONS}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    if session_token in ACTIVE_SESSIONS:
+        ACTIVE_SESSIONS.discard(session_token)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"ok": True}
 
 
 def log_event(event: str, details: str) -> None:

@@ -7,8 +7,11 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>EMA Study Admin</h1>
+    <main id="appRoot" class="container hidden">
+      <div class="topbar">
+        <h1>EMA Study Admin</h1>
+        <button id="logoutBtn" type="button" class="fit secondary">Logout</button>
+      </div>
 
       <section class="grid stats">
         <div class="card"><span>Active studies</span><strong id="activeStudies">0</strong></div>
@@ -145,6 +148,18 @@
         <div class="row">
           <button id="closeMessageBtn" type="button" class="fit primary">OK</button>
         </div>
+      </div>
+    </div>
+
+    <div id="authModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card confirm-card">
+        <h3>Sign In</h3>
+        <p>Enter your credentials to continue.</p>
+        <form id="authForm" class="stack">
+          <input id="authUsername" placeholder="Username" autocomplete="username" required />
+          <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" required />
+          <button id="authSubmitBtn" type="submit" class="fit primary">Sign In</button>
+        </form>
       </div>
     </div>
 

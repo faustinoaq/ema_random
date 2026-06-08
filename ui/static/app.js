@@ -1,5 +1,9 @@
 async function getJSON(url, options) {
   const res = await fetch(url, options);
+  if (res.status === 401) {
+    openAuthModal();
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -16,10 +20,12 @@ let editingParticipant = null;
 let editingParticipantStatus = "active";
 let editingStudy = null;
 let confirmDeleteAction = null;
+let authRequired = false;
 
 const linkModal = document.getElementById("linkModal");
 const confirmModal = document.getElementById("confirmModal");
 const messageModal = document.getElementById("messageModal");
+const authModal = document.getElementById("authModal");
 const participantModal = document.getElementById("participantModal");
 const studyModal = document.getElementById("studyModal");
 const linkModalTitle = document.getElementById("linkModalTitle");
@@ -32,8 +38,10 @@ const confirmTitle = document.getElementById("confirmTitle");
 const confirmMessage = document.getElementById("confirmMessage");
 const messageTitle = document.getElementById("messageTitle");
 const messageBody = document.getElementById("messageBody");
+const appRoot = document.getElementById("appRoot");
 
 function openParticipantModal() {
+  if (authRequired) return;
   participantModal.classList.remove("hidden");
 }
 
@@ -42,6 +50,7 @@ function closeParticipantModal() {
 }
 
 function openStudyModal() {
+  if (authRequired) return;
   studyModal.classList.remove("hidden");
 }
 
@@ -59,6 +68,7 @@ function updateWindowBadgeStates() {
 }
 
 function openLinkModal(title, value, readonly = false) {
+  if (authRequired) return;
   linkModalTitle.textContent = title;
   windowLinkInput.value = value || "";
   windowLinkInput.readOnly = readonly;
@@ -72,6 +82,7 @@ function closeLinkModal() {
 }
 
 function openConfirmModal(title, message, onConfirm) {
+  if (authRequired) return;
   confirmTitle.textContent = title;
   confirmMessage.textContent = message;
   confirmDeleteAction = onConfirm;
@@ -91,6 +102,18 @@ function openMessageModal(title, message) {
 
 function closeMessageModal() {
   messageModal.classList.add("hidden");
+}
+
+function openAuthModal() {
+  authRequired = true;
+  appRoot.classList.add("hidden");
+  authModal.classList.remove("hidden");
+}
+
+function closeAuthModal() {
+  authRequired = false;
+  authModal.classList.add("hidden");
+  appRoot.classList.remove("hidden");
 }
 
 function encodeAttr(value) {
@@ -192,6 +215,23 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
   windowLinks[activeWindow] = value;
   updateWindowBadgeStates();
   closeLinkModal();
+});
+
+document.getElementById("authForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("authUsername").value.trim();
+  const password = document.getElementById("authPassword").value;
+  try {
+    await getJSON("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    closeAuthModal();
+    await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
+  } catch {
+    openMessageModal("Sign In Failed", "Invalid username or password.");
+  }
 });
 
 async function loadDashboard() {
@@ -427,5 +467,25 @@ document.getElementById("generateBtn").addEventListener("click", async () => {
   );
 });
 
-Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    await getJSON("/api/auth/logout", { method: "POST" });
+  } catch {
+    // Ignore and force logged-out UI either way.
+  }
+  openAuthModal();
+  document.getElementById("authForm").reset();
+});
+
+async function bootstrap() {
+  const status = await getJSON("/api/auth/status");
+  if (!status.authenticated) {
+    openAuthModal();
+    return;
+  }
+  closeAuthModal();
+  await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
+}
+
+bootstrap();
 updateWindowBadgeStates();
