@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EMA Study Admin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>EMA Study Admin</h1>
+
+      <section class="grid stats">
+        <div class="card"><span>Active studies</span><strong id="activeStudies">0</strong></div>
+        <div class="card"><span>Participants</span><strong id="participants">0</strong></div>
+        <div class="card"><span>Sent today</span><strong id="sentToday">0</strong></div>
+        <div class="card"><span>Compliance</span><strong id="compliance">0%</strong></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Participants</h2>
+          <button id="openParticipantModal" type="button" class="fit primary">Add Participant</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Participant ID</th><th>Phone</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="participantRows"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Studies</h2>
+          <div class="row">
+            <button id="openStudyModal" type="button" class="fit primary">New Study</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Dates</th>
+              <th>promptsPerDay</th>
+              <th>Comments</th>
+              <th>Windows</th>
+              <th>Today Random Send Times</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="studyRows"></tbody>
+        </table>
+      </section>
+
+      <section class="card row">
+        <button id="generateBtn" class="fit primary">Generate Today's Random Times</button>
+      </section>
+
+      <section class="card">
+        <h2>Logs</h2>
+        <ul id="logs"></ul>
+      </section>
+    </main>
+
+    <div id="participantModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <button id="closeParticipantModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3 id="participantModalTitle">Add Participant</h3>
+        <form id="participantForm" class="stack">
+          <input id="participantCode" placeholder="Participant ID" required />
+          <input id="phone" placeholder="+15551234567" required />
+          <button type="submit" class="fit primary">Save</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="studyModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <button id="closeStudyModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3 id="studyModalTitle">Save Study</h3>
+        <form id="studyForm" class="stack">
+          <div class="row">
+            <div class="field">
+              <label for="studyParticipant">Participant</label>
+              <select id="studyParticipant" required></select>
+            </div>
+            <div class="field">
+              <label for="startDate">Start Date</label>
+              <input id="startDate" type="date" required />
+            </div>
+            <div class="field">
+              <label for="endDate">End Date</label>
+              <input id="endDate" type="date" required />
+            </div>
+            <div class="field">
+              <label for="promptsPerDay">Prompts Per Day</label>
+              <input id="promptsPerDay" type="number" min="1" max="8" value="4" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="studyComments">Comments</label>
+            <textarea id="studyComments" rows="3" placeholder="Comments"></textarea>
+          </div>
+          <div class="window-list">
+            <button type="button" class="window-badge" data-window="1"><strong>Window 1:</strong> 08:00 - 10:00 <span class="window-status"></span></button>
+            <button type="button" class="window-badge" data-window="2"><strong>Window 2:</strong> 10:30 - 12:30 <span class="window-status"></span></button>
+            <button type="button" class="window-badge" data-window="3"><strong>Window 3:</strong> 13:00 - 15:00 <span class="window-status"></span></button>
+            <button type="button" class="window-badge" data-window="4"><strong>Window 4:</strong> 15:30 - 17:30 <span class="window-status"></span></button>
+          </div>
+          <button type="submit" class="fit primary">Save</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="linkModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <button id="closeWindowLinkModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3 id="linkModalTitle">Set Window Link</h3>
+        <input id="windowLinkInput" type="url" placeholder="https://..." />
+        <div class="row">
+          <button id="saveWindowLinkBtn" type="button" class="fit primary">Save Link</button>
+          <button id="closeWindowLinkBtn" type="button" class="fit secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card confirm-card">
+        <button id="closeConfirmModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3 id="confirmTitle">Confirm Remove</h3>
+        <p id="confirmMessage">Are you sure?</p>
+        <div class="row">
+          <button id="confirmDeleteBtn" type="button" class="fit primary">Remove</button>
+          <button id="cancelConfirmBtn" type="button" class="fit secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="messageModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card confirm-card">
+        <button id="closeMessageModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3 id="messageTitle">Notice</h3>
+        <p id="messageBody"></p>
+        <div class="row">
+          <button id="closeMessageBtn" type="button" class="fit primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+  </html>
