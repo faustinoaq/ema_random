@@ -6,6 +6,46 @@ Minimal EMA study admin app:
 - APScheduler
 - UI served by FastAPI (`ui`)
 
+## Architecture Flow
+
+```text
+Research Staff (Browser)
+          │
+          │  Manage participants/studies, set window links, trigger generate
+          ▼
+┌──────────────────────────────┐
+│ UI (served by FastAPI)       │
+│ /                            │
+│ /static                      │
+└───────────────┬──────────────┘
+                │ REST (/api/*)
+                ▼
+┌──────────────────────────────────────────┐
+│ FastAPI Server (server.main)            │
+│ - Participant CRUD                       │
+│ - Study CRUD                             │
+│ - Dashboard + logs                       │
+│ - Scheduler trigger endpoint             │
+└───────────────┬──────────────────────────┘
+                │
+                ├──────────────► SQLite (study.db)
+                │                participants/studies/prompts/logs
+                │
+                └──────────────► APScheduler
+                                 (daily + manual random time generation)
+                                              │
+                                              │ send SMS (implementation hook)
+                                              ▼
+                                      Twilio SMS API
+                                              │
+                                              ▼
+                                       Participant Phone
+                                              │
+                                              │ opens study-specific REDCap link
+                                              ▼
+                                         REDCap Survey
+```
+
 ## Run
 
 ```bash
