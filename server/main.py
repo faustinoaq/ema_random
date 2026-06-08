@@ -24,7 +24,7 @@ app.add_middleware(
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "frontend"
+STATIC_DIR = BASE_DIR / "ui"
 scheduler = BackgroundScheduler()
 
 
