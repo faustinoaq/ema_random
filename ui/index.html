@@ -25,12 +25,14 @@
           <h2>Participants</h2>
           <button id="openParticipantModal" type="button" class="fit primary">Add Participant</button>
         </div>
-        <table>
-          <thead>
-            <tr><th>Participant ID</th><th>Phone</th><th>Actions</th></tr>
-          </thead>
-          <tbody id="participantRows"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="participants-table">
+            <thead>
+              <tr><th>Participant ID</th><th>Phone</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="participantRows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="card">
@@ -38,26 +40,24 @@
           <h2>Studies</h2>
           <div class="row">
             <button id="openStudyModal" type="button" class="fit primary">New Study</button>
+            <button id="generateBtn" class="fit primary">Generate Today's Random Times</button>
           </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Participant</th>
-              <th>Dates</th>
-              <th>promptsPerDay</th>
-              <th>Comments</th>
-              <th>Windows</th>
-              <th>Today Random Send Times</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="studyRows"></tbody>
-        </table>
-      </section>
-
-      <section class="card row">
-        <button id="generateBtn" class="fit primary">Generate Today's Random Times</button>
+        <div class="table-scroll">
+          <table class="studies-table">
+            <thead>
+              <tr>
+                <th>Participant</th>
+                <th>Dates</th>
+                <th>promptsPerDay</th>
+                <th>Comments</th>
+                <th>Windows</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="studyRows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="card">
@@ -121,6 +121,10 @@
         <button id="closeWindowLinkModalX" type="button" class="modal-x" aria-label="Close">x</button>
         <h3 id="linkModalTitle">Set Window Link</h3>
         <input id="windowLinkInput" type="url" placeholder="https://..." />
+        <div id="windowScheduleBlock" class="window-schedule hidden">
+          <strong>Scheduled Send Times</strong>
+          <ul id="windowScheduleList"></ul>
+        </div>
         <div class="row">
           <button id="saveWindowLinkBtn" type="button" class="fit primary">Save Link</button>
           <button id="closeWindowLinkBtn" type="button" class="fit secondary">Close</button>

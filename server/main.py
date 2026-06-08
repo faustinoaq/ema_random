@@ -114,6 +114,17 @@ def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
     return start_dt.fromtimestamp(start_dt.timestamp() + random.randint(0, delta))
 
 
+def random_time_first_30_minutes_for_day(day: date, start_hhmm: str, end_hhmm: str) -> datetime:
+    day_str = day.isoformat()
+    start_dt = datetime.fromisoformat(f"{day_str}T{start_hhmm}:00")
+    end_dt = datetime.fromisoformat(f"{day_str}T{end_hhmm}:00")
+    first_30_end = min(start_dt + timedelta(minutes=30), end_dt)
+    delta = int((first_30_end - start_dt).total_seconds())
+    if delta <= 0:
+        return start_dt
+    return start_dt.fromtimestamp(start_dt.timestamp() + random.randint(0, delta))
+
+
 def validate_study_windows(payload: StudyIn) -> None:
     if len(payload.windows) < payload.prompts_per_day:
         raise HTTPException(
@@ -128,61 +139,91 @@ def validate_study_windows(payload: StudyIn) -> None:
             )
 
 
-def generate_daily_schedule() -> None:
-    conn = get_conn()
-    studies = conn.execute("SELECT * FROM studies ORDER BY id DESC").fetchall()
-    if not studies:
-        conn.close()
-        return
+def study_date_range(study_row) -> list[date]:
+    start = date.fromisoformat(study_row["start_date"])
+    end = date.fromisoformat(study_row["end_date"])
+    if end < start:
+        return []
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
-    # Regenerate today's schedule by replacing only prompts not sent yet.
-    conn.execute(
-        """
-        DELETE FROM prompts
-        WHERE date(scheduled_time) = date('now') AND status != 'sent'
-        """
-    )
 
-    total_scheduled = 0
-    for study in studies:
-        participant = conn.execute(
-            "SELECT id FROM participants WHERE id = ? AND status = 'active'",
-            (study["participant_id"],),
-        ).fetchone()
-        if not participant:
-            continue
+def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
+    participant = conn.execute(
+        "SELECT id FROM participants WHERE id = ? AND status = 'active'",
+        (study_row["participant_id"],),
+    ).fetchone()
+    if not participant:
+        return 0
 
-        windows = json.loads(study["windows_json"])
-        if not windows:
-            log_event("schedule_skipped", f"study_id={study['id']} has no windows")
-            continue
+    windows = json.loads(study_row["windows_json"])
+    if not windows:
+        log_event("schedule_skipped", f"study_id={study_row['id']} has no windows")
+        return 0
 
-        selected_windows = windows[: study["prompts_per_day"]]
-        if len(selected_windows) < study["prompts_per_day"]:
-            log_event("schedule_skipped", f"study_id={study['id']} has insufficient windows")
-            continue
-        daily_window_times = [
-            random_time_first_30_minutes(w["start"], w["end"]).isoformat() for w in selected_windows
-        ]
+    selected_windows = windows[: study_row["prompts_per_day"]]
+    if len(selected_windows) < study_row["prompts_per_day"]:
+        log_event("schedule_skipped", f"study_id={study_row['id']} has insufficient windows")
+        return 0
+
+    days = study_date_range(study_row)
+    if not days:
+        log_event("schedule_skipped", f"study_id={study_row['id']} has invalid date range")
+        return 0
+
+    scheduled_count = 0
+    for day in days:
+        if overwrite_unsent:
+            conn.execute(
+                """
+                DELETE FROM prompts
+                WHERE participant_id = ?
+                  AND date(scheduled_time) = ?
+                  AND status != 'sent'
+                """,
+                (participant["id"], day.isoformat()),
+            )
 
         for idx, window in enumerate(selected_windows):
             survey_link = (window.get("link") or "").strip()
             if not survey_link:
-                log_event("schedule_skipped", f"study_id={study['id']} missing link for window {idx + 1}")
+                log_event("schedule_skipped", f"study_id={study_row['id']} missing link for window {idx + 1}")
                 continue
+
+            if not overwrite_unsent:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM prompts
+                    WHERE participant_id = ? AND window_index = ? AND date(scheduled_time) = ?
+                    LIMIT 1
+                    """,
+                    (participant["id"], idx + 1, day.isoformat()),
+                ).fetchone()
+                if existing:
+                    continue
+
+            scheduled_dt = random_time_first_30_minutes_for_day(day, window["start"], window["end"]).isoformat()
             conn.execute(
                 """
                 INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
                 VALUES (?, ?, ?, 'scheduled', ?)
                 """,
-                (
-                    participant["id"],
-                    idx + 1,
-                    daily_window_times[idx],
-                    survey_link,
-                ),
+                (participant["id"], idx + 1, scheduled_dt, survey_link),
             )
-            total_scheduled += 1
+            scheduled_count += 1
+
+    return scheduled_count
+
+
+def generate_daily_schedule() -> None:
+    # Cron job: only top-up missing prompts, do not overwrite existing.
+    conn = get_conn()
+    studies = conn.execute("SELECT * FROM studies ORDER BY id DESC").fetchall()
+    if not studies:
+        conn.close()
+        return
+    total_scheduled = 0
+    for study in studies:
+        total_scheduled += regenerate_study_schedule(conn, study, overwrite_unsent=False)
     conn.commit()
     conn.close()
     log_event("schedule_generated", f"Generated {total_scheduled} prompts")
@@ -278,37 +319,34 @@ def list_studies():
         ORDER BY s.id DESC
         """
     ).fetchall()
-    today_window_times = conn.execute(
-        """
-        SELECT
-            participant_id,
-            window_index,
-            MIN(strftime('%H:%M', scheduled_time)) AS hhmm,
-            MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
-        FROM prompts
-        WHERE date(scheduled_time) = date('now') AND window_index IS NOT NULL
-        GROUP BY participant_id, window_index
-        ORDER BY participant_id, window_index
-        """
-    ).fetchall()
-    conn.close()
-    today_time_by_key = {
-        (r["participant_id"], r["window_index"]): {
-            "time": r["hhmm"],
-            "sent": bool(r["is_sent"]),
-        }
-        for r in today_window_times
-    }
     output = []
     for row in rows:
         item = dict(row)
         item["windows"] = json.loads(item.pop("windows_json"))
-        item["today_random_times"] = []
-        for idx, _ in enumerate(item["windows"][: item["prompts_per_day"]], start=1):
-            item["today_random_times"].append(
-                today_time_by_key.get((item.get("participant_id"), idx), {"time": None, "sent": False})
+        schedules = conn.execute(
+            """
+            SELECT
+                window_index,
+                date(scheduled_time) AS day,
+                strftime('%H:%M', scheduled_time) AS hhmm,
+                MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
+            FROM prompts
+            WHERE participant_id = ?
+              AND date(scheduled_time) BETWEEN ? AND ?
+            GROUP BY window_index, date(scheduled_time)
+            ORDER BY day, window_index
+            """,
+            (item["participant_id"], item["start_date"], item["end_date"]),
+        ).fetchall()
+        by_window: dict[str, list[dict]] = {}
+        for s in schedules:
+            key = str(s["window_index"])
+            by_window.setdefault(key, []).append(
+                {"date": s["day"], "time": s["hhmm"], "sent": bool(s["is_sent"])}
             )
+        item["window_schedules"] = by_window
         output.append(item)
+    conn.close()
     return output
 
 
@@ -346,8 +384,13 @@ def create_study(payload: StudyIn):
     row = conn.execute("SELECT * FROM studies WHERE id = ?", (new_id,)).fetchone()
     conn.close()
     log_event("study_created", f"id={new_id}")
-    # New study should immediately receive today's generated random times.
-    generate_daily_schedule()
+    conn = get_conn()
+    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = ?", (new_id,)).fetchone()
+    if study_for_schedule:
+        created = regenerate_study_schedule(conn, study_for_schedule, overwrite_unsent=True)
+        log_event("schedule_generated", f"study_id={new_id} prompts_generated={created}")
+    conn.commit()
+    conn.close()
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
     return result
@@ -392,6 +435,13 @@ def update_study(study_id: int, payload: StudyIn):
     log_event("study_updated", f"id={study_id}")
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
+    conn = get_conn()
+    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = ?", (study_id,)).fetchone()
+    if study_for_schedule:
+        created = regenerate_study_schedule(conn, study_for_schedule, overwrite_unsent=True)
+        log_event("schedule_generated", f"study_id={study_id} prompts_generated={created}")
+    conn.commit()
+    conn.close()
     return result
 
 
@@ -417,8 +467,15 @@ def list_logs():
 
 @app.post("/api/scheduler/generate")
 def manual_generate():
-    generate_daily_schedule()
-    return {"ok": True}
+    conn = get_conn()
+    studies = conn.execute("SELECT * FROM studies ORDER BY id DESC").fetchall()
+    total = 0
+    for study in studies:
+        total += regenerate_study_schedule(conn, study, overwrite_unsent=True)
+    conn.commit()
+    conn.close()
+    log_event("schedule_generated", f"manual prompts_generated={total}")
+    return {"ok": True, "generated": total}
 
 
 @app.get("/api/dashboard")

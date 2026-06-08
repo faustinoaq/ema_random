@@ -30,6 +30,8 @@ const participantModal = document.getElementById("participantModal");
 const studyModal = document.getElementById("studyModal");
 const linkModalTitle = document.getElementById("linkModalTitle");
 const windowLinkInput = document.getElementById("windowLinkInput");
+const windowScheduleBlock = document.getElementById("windowScheduleBlock");
+const windowScheduleList = document.getElementById("windowScheduleList");
 const windowBadges = Array.from(document.querySelectorAll(".window-badge"));
 const participantSubmitBtn = document.querySelector("#participantForm button[type='submit']");
 const studySubmitBtn = document.querySelector("#studyForm button[type='submit']");
@@ -67,12 +69,40 @@ function updateWindowBadgeStates() {
   });
 }
 
-function openLinkModal(title, value, readonly = false) {
+function renderWindowSchedule(scheduleItems = []) {
+  if (!scheduleItems.length) {
+    windowScheduleList.innerHTML = "<li>No scheduled times yet.</li>";
+    windowScheduleBlock.classList.remove("hidden");
+    return;
+  }
+  windowScheduleList.innerHTML = scheduleItems
+    .map((item) => {
+      if (!item?.time || !item?.date) return "<li>-</li>";
+      const [h, m] = item.time.split(":").map(Number);
+      const d = new Date(`${item.date}T00:00:00`);
+      d.setHours(h, m, 0, 0);
+      const dateLabel = d.toLocaleDateString([], { month: "short", day: "numeric" });
+      const timeLabel = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const statusClass = item.sent ? "time-sent" : "time-pending";
+      const statusText = item.sent ? "Sent" : "Pending";
+      return `<li><span>${dateLabel}: ${timeLabel}</span> <span class="tag ${statusClass}">${statusText}</span></li>`;
+    })
+    .join("");
+  windowScheduleBlock.classList.remove("hidden");
+}
+
+function openLinkModal(title, value, readonly = false, scheduleItems = []) {
   if (authRequired) return;
   linkModalTitle.textContent = title;
   windowLinkInput.value = value || "";
   windowLinkInput.readOnly = readonly;
   document.getElementById("saveWindowLinkBtn").style.display = readonly ? "none" : "inline-block";
+  if (readonly) {
+    renderWindowSchedule(scheduleItems);
+  } else {
+    windowScheduleBlock.classList.add("hidden");
+    windowScheduleList.innerHTML = "";
+  }
   linkModal.classList.remove("hidden");
 }
 
@@ -305,25 +335,15 @@ async function loadStudies() {
   const rows = await getJSON("/api/studies");
   const body = document.getElementById("studyRows");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7">No studies configured yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">No studies configured yet.</td></tr>';
     return;
   }
   body.innerHTML = rows
     .map((r) => {
       const windows = (r.windows || [])
-        .map(
-          (w, i) =>
-            `<button type="button" class="tag button-tag" data-link="${encodeAttr(w.link || "")}" data-label="Window ${i + 1}">W${i + 1} ${w.start}-${w.end}</button>`
-        )
-        .join("");
-      const randomTimes = (r.today_random_times || [])
-        .map((item) => {
-          if (!item?.time) return '<span class="tag time-pending">-</span>';
-          const [h, m] = item.time.split(":").map(Number);
-          const d = new Date();
-          d.setHours(h, m, 0, 0);
-          const cls = item.sent ? "time-sent" : "time-pending";
-          return `<span class="tag ${cls}">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>`;
+        .map((w, i) => {
+          const schedule = r.window_schedules?.[String(i + 1)] || [];
+          return `<button type="button" class="tag button-tag" data-link="${encodeAttr(w.link || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
         })
         .join("");
       return `<tr>
@@ -332,7 +352,6 @@ async function loadStudies() {
         <td>${r.prompts_per_day}</td>
         <td>${r.comments || "-"}</td>
         <td><div class="stacked-tags">${windows}</div></td>
-        <td><div class="stacked-tags">${randomTimes || "-"}</div></td>
         <td>
           <button type="button" class="secondary action edit-study" data-id="${r.id}">Edit</button>
           <button type="button" class="secondary action delete-study" data-id="${r.id}">Remove</button>
@@ -344,7 +363,13 @@ async function loadStudies() {
     btn.addEventListener("click", () => {
       const label = btn.dataset.label || "Window";
       const link = decodeURIComponent(btn.dataset.link || "") || "No link configured";
-      openLinkModal(`${label} Link`, link, true);
+      let scheduleItems = [];
+      try {
+        scheduleItems = JSON.parse(decodeURIComponent(btn.dataset.schedule || "[]"));
+      } catch {
+        scheduleItems = [];
+      }
+      openLinkModal(`${label} Link`, link, true, scheduleItems);
     });
   });
   body.querySelectorAll(".edit-study").forEach((btn) => {
