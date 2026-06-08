@@ -335,7 +335,7 @@ async function loadStudies() {
   const rows = await getJSON("/api/studies");
   const body = document.getElementById("studyRows");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="6">No studies configured yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5">No studies configured yet.</td></tr>';
     return;
   }
   body.innerHTML = rows
@@ -349,7 +349,6 @@ async function loadStudies() {
       return `<tr>
         <td>${r.participant_code || `#${r.participant_id || "-"}`}</td>
         <td>${r.start_date} to ${r.end_date}</td>
-        <td>${r.prompts_per_day}</td>
         <td>${r.comments || "-"}</td>
         <td><div class="stacked-tags">${windows}</div></td>
         <td>
@@ -381,7 +380,7 @@ async function loadStudies() {
       studyParticipantSelect.value = String(study.participant_id || "");
       document.getElementById("startDate").value = study.start_date;
       document.getElementById("endDate").value = study.end_date;
-      document.getElementById("promptsPerDay").value = study.prompts_per_day;
+      document.getElementById("promptsPerDay").value = 4;
       document.getElementById("studyComments").value = study.comments || "";
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = study.windows?.[i - 1]?.link || "";
@@ -452,7 +451,7 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     comments: document.getElementById("studyComments").value.trim(),
     start_date: document.getElementById("startDate").value,
     end_date: document.getElementById("endDate").value,
-    prompts_per_day: Number(document.getElementById("promptsPerDay").value || 4),
+    prompts_per_day: 4,
     windows: [
       { start: windowTimes[1].start, end: windowTimes[1].end, link: windowLinks[1] },
       { start: windowTimes[2].start, end: windowTimes[2].end, link: windowLinks[2] },
