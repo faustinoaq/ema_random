@@ -64,11 +64,19 @@ Open: `http://127.0.0.1:8000`
 API routes are protected with session auth (`/api/*` except auth endpoints).
 The UI shows a sign-in modal and creates an authenticated session cookie.
 
-Set credentials in `.env`:
+Set credentials in `.env` using a password hash:
 
 ```env
 APP_AUTH_USERNAME=admin
-APP_AUTH_PASSWORD=change_me
+APP_AUTH_PASSWORD_HASH=sha256-hex-encoded-password
+```
+
+If `APP_AUTH_PASSWORD_HASH` is not set, the server falls back to hashing `APP_AUTH_PASSWORD` at startup for compatibility with older configs.
+
+To generate a SHA-256 hash:
+
+```bash
+printf '%s' 'change_me' | sha256sum
 ```
 
 ## API

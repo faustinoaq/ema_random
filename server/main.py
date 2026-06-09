@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import random
 import os
 import secrets
 import time
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -33,10 +35,16 @@ STATIC_DIR = BASE_DIR / "ui"
 load_dotenv(BASE_DIR / ".env")
 scheduler = BackgroundScheduler()
 AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
+AUTH_PASSWORD_HASH = os.getenv("APP_AUTH_PASSWORD_HASH")
 AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "admin")
+if not AUTH_PASSWORD_HASH:
+    AUTH_PASSWORD_HASH = hashlib.sha256(AUTH_PASSWORD.encode("utf-8")).hexdigest()
 SESSION_COOKIE_NAME = "ema_session"
 ACTIVE_SESSIONS: set[str] = set()
-LOGIN_DELAY_SECONDS = 1
+LOGIN_DELAY_SECONDS = 3
+LOGIN_MIN_INTERVAL_SECONDS = 5
+LOGIN_ATTEMPT_LOCK = threading.Lock()
+LAST_LOGIN_ATTEMPT_BY_IP: dict[str, float] = {}
 
 
 class LoginPayload(BaseModel):
@@ -59,23 +67,44 @@ async def auth_middleware(request: Request, call_next):
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginPayload, response: Response):
-    time.sleep(LOGIN_DELAY_SECONDS)
-    if not (
-        secrets.compare_digest(payload.username, AUTH_USERNAME)
-        and secrets.compare_digest(payload.password, AUTH_PASSWORD)
-    ):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = secrets.token_urlsafe(32)
-    ACTIVE_SESSIONS.add(token)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=60 * 60 * 12,
-    )
-    return {"ok": True}
+def login(payload: LoginPayload, request: Request, response: Response):
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    last_attempt = LAST_LOGIN_ATTEMPT_BY_IP.get(client_ip, 0.0)
+    if now - last_attempt < LOGIN_MIN_INTERVAL_SECONDS:
+        retry_after = max(1, int(LOGIN_MIN_INTERVAL_SECONDS - (now - last_attempt)))
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please wait and try again.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not LOGIN_ATTEMPT_LOCK.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Login already in progress. Please wait and try again.",
+        )
+
+    LAST_LOGIN_ATTEMPT_BY_IP[client_ip] = now
+    try:
+        time.sleep(LOGIN_DELAY_SECONDS)
+        provided_password_hash = hashlib.sha256(payload.password.encode("utf-8")).hexdigest()
+        if not secrets.compare_digest(payload.username, AUTH_USERNAME) or not secrets.compare_digest(
+            provided_password_hash, AUTH_PASSWORD_HASH
+        ):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        token = secrets.token_urlsafe(32)
+        ACTIVE_SESSIONS.add(token)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=token,
+            httponly=True,
+            samesite="lax",
+            max_age=60 * 60 * 12,
+        )
+        return {"ok": True}
+    finally:
+        LOGIN_ATTEMPT_LOCK.release()
 
 
 @app.get("/api/auth/status")

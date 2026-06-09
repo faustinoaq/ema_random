@@ -38,8 +38,10 @@ const studySubmitBtn = document.querySelector("#studyForm button[type='submit']"
 const studyParticipantSelect = document.getElementById("studyParticipant");
 const confirmTitle = document.getElementById("confirmTitle");
 const confirmMessage = document.getElementById("confirmMessage");
+const confirmDeleteBtn = document.getElementById("confirmDeleteBtn");
 const messageTitle = document.getElementById("messageTitle");
 const messageBody = document.getElementById("messageBody");
+const authSubmitBtn = document.getElementById("authSubmitBtn");
 const appRoot = document.getElementById("appRoot");
 
 function openParticipantModal() {
@@ -111,10 +113,11 @@ function closeLinkModal() {
   activeWindow = null;
 }
 
-function openConfirmModal(title, message, onConfirm) {
+function openConfirmModal(title, message, onConfirm, actionLabel = "Remove") {
   if (authRequired) return;
   confirmTitle.textContent = title;
   confirmMessage.textContent = message;
+  confirmDeleteBtn.textContent = actionLabel;
   confirmDeleteAction = onConfirm;
   confirmModal.classList.remove("hidden");
 }
@@ -249,18 +252,27 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
 
 document.getElementById("authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (authSubmitBtn.disabled) return;
   const username = document.getElementById("authUsername").value.trim();
   const password = document.getElementById("authPassword").value;
+  authSubmitBtn.disabled = true;
+  authSubmitBtn.textContent = "Signing In...";
   try {
-    await getJSON("/api/auth/login", {
+    const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
     closeAuthModal();
     await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
   } catch {
     openMessageModal("Sign In Failed", "Invalid username or password.");
+  } finally {
+    authSubmitBtn.disabled = false;
+    authSubmitBtn.textContent = "Sign In";
   }
 });
 
@@ -487,7 +499,8 @@ document.getElementById("generateBtn").addEventListener("click", async () => {
     async () => {
       await getJSON("/api/scheduler/generate", { method: "POST" });
       await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
-    }
+    },
+    "Generate"
   );
 });
 
