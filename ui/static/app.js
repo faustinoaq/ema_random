@@ -21,6 +21,8 @@ let editingParticipantStatus = "active";
 let editingStudy = null;
 let confirmDeleteAction = null;
 let authRequired = false;
+let participantsCache = [];
+let studiesCache = [];
 
 const linkModal = document.getElementById("linkModal");
 const confirmModal = document.getElementById("confirmModal");
@@ -45,6 +47,8 @@ const messageBody = document.getElementById("messageBody");
 const smsRecipient = document.getElementById("smsRecipient");
 const smsBody = document.getElementById("smsBody");
 const sendSmsBtn = document.getElementById("sendSmsBtn");
+const exportParticipantsCsvBtn = document.getElementById("exportParticipantsCsvBtn");
+const exportStudiesCsvBtn = document.getElementById("exportStudiesCsvBtn");
 const authSubmitBtn = document.getElementById("authSubmitBtn");
 const appRoot = document.getElementById("appRoot");
 let smsTargetParticipantId = null;
@@ -183,6 +187,27 @@ function isValidHttpUrl(value) {
   }
 }
 
+function escapeCsv(value) {
+  const text = String(value ?? "");
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderStudyParticipantOptions(participants, selectedId = null) {
   const options = ['<option value="">Select participant</option>'];
   participants.forEach((p) => {
@@ -255,6 +280,8 @@ document.getElementById("closeMessageModalX").addEventListener("click", closeMes
 document.getElementById("closeMessageBtn").addEventListener("click", closeMessageModal);
 document.getElementById("closeSmsModalX").addEventListener("click", closeSmsModal);
 document.getElementById("closeSmsBtn").addEventListener("click", closeSmsModal);
+exportParticipantsCsvBtn.addEventListener("click", exportParticipantsCsv);
+exportStudiesCsvBtn.addEventListener("click", exportStudiesCsv);
 document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
   if (!confirmDeleteAction) return;
   await confirmDeleteAction();
@@ -339,6 +366,7 @@ async function loadDashboard() {
 
 async function loadParticipants() {
   const rows = await getJSON("/api/participants");
+  participantsCache = rows;
   renderStudyParticipantOptions(rows, studyParticipantSelect.value);
   const body = document.getElementById("participantRows");
   if (!rows.length) {
@@ -406,6 +434,7 @@ async function loadLogs() {
 
 async function loadStudies() {
   const rows = await getJSON("/api/studies");
+  studiesCache = rows;
   const body = document.getElementById("studyRows");
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="5">No studies configured yet.</td></tr>';
@@ -483,6 +512,43 @@ async function loadStudies() {
       });
     });
   });
+}
+
+function exportParticipantsCsv() {
+  if (!participantsCache.length) {
+    openMessageModal("No Data", "There are no participants to export.");
+    return;
+  }
+  downloadCsv("participants.csv", [
+    ["id", "participant_id", "phone", "redcap_record_id", "status"],
+    ...participantsCache.map((row) => [
+      row.id,
+      row.participant_id,
+      row.phone,
+      row.redcap_record_id || "",
+      row.status || "",
+    ]),
+  ]);
+}
+
+function exportStudiesCsv() {
+  if (!studiesCache.length) {
+    openMessageModal("No Data", "There are no studies to export.");
+    return;
+  }
+  downloadCsv("studies.csv", [
+    ["id", "participant_id", "participant_code", "start_date", "end_date", "prompts_per_day", "comments", "windows_json"],
+    ...studiesCache.map((row) => [
+      row.id,
+      row.participant_id,
+      row.participant_code || "",
+      row.start_date,
+      row.end_date,
+      row.prompts_per_day,
+      row.comments || "",
+      JSON.stringify(row.windows || []),
+    ]),
+  ]);
 }
 
 document.getElementById("participantForm").addEventListener("submit", async (e) => {
