@@ -209,7 +209,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
             conn.execute(
                 """
                 DELETE FROM prompts
-                WHERE participant_id = ?
+                WHERE participant_id = %s
                   AND scheduled_time::date = %s
                   AND status != 'sent'
                 """,
@@ -365,7 +365,7 @@ def list_studies():
                 to_char(scheduled_time::timestamp, 'HH24:MI') AS hhmm,
                 MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
             FROM prompts
-            WHERE participant_id = ?
+            WHERE participant_id = %s
               AND scheduled_time::date BETWEEN %s AND %s
             GROUP BY window_index, scheduled_time::date, scheduled_time::timestamp
             ORDER BY day, window_index
