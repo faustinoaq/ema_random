@@ -7,6 +7,9 @@ import os
 import secrets
 import time
 import threading
+import base64
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -47,6 +50,10 @@ LOGIN_DELAY_SECONDS = 3
 LOGIN_MIN_INTERVAL_SECONDS = 5
 LOGIN_ATTEMPT_LOCK = threading.Lock()
 LAST_LOGIN_ATTEMPT_BY_IP: dict[str, float] = {}
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 
 
 class LoginPayload(BaseModel):
@@ -134,6 +141,35 @@ def log_event(event: str, details: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def send_sms_message(to_number: str, body: str) -> None:
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        raise HTTPException(status_code=400, detail="Twilio credentials are not configured")
+    if not TWILIO_FROM_NUMBER and not TWILIO_MESSAGING_SERVICE_SID:
+        raise HTTPException(status_code=400, detail="Twilio sender is not configured")
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+    payload = {"To": to_number, "Body": body}
+    if TWILIO_MESSAGING_SERVICE_SID:
+        payload["MessagingServiceSid"] = TWILIO_MESSAGING_SERVICE_SID
+    else:
+        payload["From"] = TWILIO_FROM_NUMBER
+
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    auth = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as res:
+        if res.status >= 300:
+            raise HTTPException(status_code=502, detail="Twilio SMS send failed")
 
 
 def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
@@ -339,6 +375,28 @@ def delete_participant(participant_id: int):
     if deleted.rowcount == 0:
         raise HTTPException(status_code=404, detail="Participant not found")
     log_event("participant_deleted", f"id={participant_id}")
+    return {"ok": True}
+
+
+class SmsPayload(BaseModel):
+    body: str
+
+
+@app.post("/api/participants/{participant_id}/sms")
+def send_participant_sms(participant_id: int, payload: SmsPayload):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT participant_id, phone FROM participants WHERE id = %s",
+        (participant_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    message_body = payload.body.strip()
+    if not message_body:
+        raise HTTPException(status_code=400, detail="Message body is required")
+    send_sms_message(row["phone"], message_body)
+    log_event("sms_sent", f"participant_id={participant_id}")
     return {"ok": True}
 
 

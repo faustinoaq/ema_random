@@ -25,6 +25,7 @@ let authRequired = false;
 const linkModal = document.getElementById("linkModal");
 const confirmModal = document.getElementById("confirmModal");
 const messageModal = document.getElementById("messageModal");
+const smsModal = document.getElementById("smsModal");
 const authModal = document.getElementById("authModal");
 const participantModal = document.getElementById("participantModal");
 const studyModal = document.getElementById("studyModal");
@@ -41,8 +42,13 @@ const confirmMessage = document.getElementById("confirmMessage");
 const confirmDeleteBtn = document.getElementById("confirmDeleteBtn");
 const messageTitle = document.getElementById("messageTitle");
 const messageBody = document.getElementById("messageBody");
+const smsRecipient = document.getElementById("smsRecipient");
+const smsBody = document.getElementById("smsBody");
+const sendSmsBtn = document.getElementById("sendSmsBtn");
 const authSubmitBtn = document.getElementById("authSubmitBtn");
 const appRoot = document.getElementById("appRoot");
+let smsTargetParticipantId = null;
+let smsTargetParticipantLabel = "";
 
 function openParticipantModal() {
   if (authRequired) return;
@@ -135,6 +141,21 @@ function openMessageModal(title, message) {
 
 function closeMessageModal() {
   messageModal.classList.add("hidden");
+}
+
+function openSmsModal(participantId, label) {
+  if (authRequired) return;
+  smsTargetParticipantId = participantId;
+  smsTargetParticipantLabel = label;
+  smsRecipient.textContent = `To: ${label}`;
+  smsBody.value = "";
+  smsModal.classList.remove("hidden");
+}
+
+function closeSmsModal() {
+  smsModal.classList.add("hidden");
+  smsTargetParticipantId = null;
+  smsTargetParticipantLabel = "";
 }
 
 function openAuthModal() {
@@ -232,6 +253,8 @@ document.getElementById("closeConfirmModalX").addEventListener("click", closeCon
 document.getElementById("cancelConfirmBtn").addEventListener("click", closeConfirmModal);
 document.getElementById("closeMessageModalX").addEventListener("click", closeMessageModal);
 document.getElementById("closeMessageBtn").addEventListener("click", closeMessageModal);
+document.getElementById("closeSmsModalX").addEventListener("click", closeSmsModal);
+document.getElementById("closeSmsBtn").addEventListener("click", closeSmsModal);
 document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
   if (!confirmDeleteAction) return;
   await confirmDeleteAction();
@@ -248,6 +271,36 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
   windowLinks[activeWindow] = value;
   updateWindowBadgeStates();
   closeLinkModal();
+});
+
+document.getElementById("smsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!smsTargetParticipantId || sendSmsBtn.disabled) return;
+  const body = smsBody.value.trim();
+  if (!body) {
+    openMessageModal("Missing Message", "Please type a message before sending.");
+    return;
+  }
+  sendSmsBtn.disabled = true;
+  sendSmsBtn.textContent = "Sending...";
+  try {
+    const res = await fetch(`/api/participants/${smsTargetParticipantId}/sms`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+    closeSmsModal();
+    openMessageModal("SMS Sent", `Message sent to ${smsTargetParticipantLabel}.`);
+    await loadLogs();
+  } catch (err) {
+    openMessageModal("SMS Failed", err.message || "Unable to send the message.");
+  } finally {
+    sendSmsBtn.disabled = false;
+    sendSmsBtn.textContent = "Send";
+  }
 });
 
 document.getElementById("authForm").addEventListener("submit", async (e) => {
@@ -299,6 +352,7 @@ async function loadParticipants() {
         <td>${r.phone}</td>
         <td>
           <button type="button" class="secondary action edit-participant" data-id="${r.id}" data-participant-id="${encodeAttr(r.participant_id || "")}" data-phone="${encodeAttr(r.phone)}" data-status="${encodeAttr(r.status || "active")}">Edit</button>
+          <button type="button" class="secondary action sms-participant" data-id="${r.id}" data-participant-id="${encodeAttr(r.participant_id || "")}" data-phone="${encodeAttr(r.phone)}">Send SMS</button>
           <button type="button" class="secondary action delete-participant" data-id="${r.id}">Remove</button>
         </td>
       </tr>`
@@ -330,6 +384,13 @@ async function loadParticipants() {
         }
         await Promise.all([loadParticipants(), loadDashboard(), loadLogs()]);
       });
+    });
+  });
+  body.querySelectorAll(".sms-participant").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      const label = `${decodeURIComponent(btn.dataset.participantId || "-")} (${decodeURIComponent(btn.dataset.phone || "")})`;
+      openSmsModal(id, label);
     });
   });
 }

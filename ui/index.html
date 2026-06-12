@@ -153,6 +153,21 @@
       </div>
     </div>
 
+    <div id="smsModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <button id="closeSmsModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3>Send SMS</h3>
+        <p id="smsRecipient"></p>
+        <form id="smsForm" class="stack">
+          <textarea id="smsBody" rows="5" placeholder="Type message" required></textarea>
+          <div class="row">
+            <button id="sendSmsBtn" type="submit" class="fit primary">Send</button>
+            <button id="closeSmsBtn" type="button" class="fit secondary">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="authModal" class="modal hidden" aria-hidden="true">
       <div class="modal-card confirm-card">
         <h3>Sign In</h3>
