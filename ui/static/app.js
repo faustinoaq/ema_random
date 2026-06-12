@@ -293,7 +293,7 @@ document.getElementById("smsForm").addEventListener("submit", async (e) => {
       throw new Error(await res.text());
     }
     closeSmsModal();
-    openMessageModal("SMS Sent", `Message sent to ${smsTargetParticipantLabel}.`);
+    openMessageModal("SMS Sent", `Message sent to ${smsTargetParticipantLabel || "participant phone"}.`);
     await loadLogs();
   } catch (err) {
     openMessageModal("SMS Failed", err.message || "Unable to send the message.");
@@ -389,7 +389,7 @@ async function loadParticipants() {
   body.querySelectorAll(".sms-participant").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = Number(btn.dataset.id);
-      const label = `${decodeURIComponent(btn.dataset.participantId || "-")} (${decodeURIComponent(btn.dataset.phone || "")})`;
+      const label = decodeURIComponent(btn.dataset.phone || "");
       openSmsModal(id, label);
     });
   });
