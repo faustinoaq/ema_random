@@ -10,8 +10,10 @@ import threading
 import base64
 import urllib.parse
 import urllib.request
+import time as time_module
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -36,6 +38,11 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "ui"
 load_dotenv(BASE_DIR / ".env")
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "America/New_York")
+LOCAL_TZ = ZoneInfo(APP_TIMEZONE)
+os.environ.setdefault("TZ", APP_TIMEZONE)
+if hasattr(time_module, "tzset"):
+    time_module.tzset()
 scheduler = BackgroundScheduler()
 AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
 AUTH_PASSWORD_HASH = os.getenv("APP_AUTH_PASSWORD_HASH")
@@ -137,7 +144,7 @@ def log_event(event: str, details: str) -> None:
     conn = get_conn()
     conn.execute(
         "INSERT INTO logs (timestamp, event, details) VALUES (%s, %s, %s)",
-        (datetime.utcnow().isoformat(), event, details),
+        (datetime.now(LOCAL_TZ).isoformat(), event, details),
     )
     conn.commit()
     conn.close()
@@ -173,7 +180,7 @@ def send_sms_message(to_number: str, body: str) -> None:
 
 
 def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
-    today = date.today().isoformat()
+    today = datetime.now(LOCAL_TZ).date().isoformat()
     start_dt = datetime.fromisoformat(f"{today}T{start_hhmm}:00")
     end_dt = datetime.fromisoformat(f"{today}T{end_hhmm}:00")
     first_30_end = min(start_dt + timedelta(minutes=30), end_dt)

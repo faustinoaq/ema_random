@@ -72,6 +72,7 @@ The root `app.py` imports `server.main:app` and also supports `python app.py` lo
 Set PostgreSQL env vars for the cloud deployment:
 
 ```env
+APP_TIMEZONE=America/New_York
 POSTGRESQL_USER=postgres
 POSTGRESQL_PASSWORD=change_me
 POSTGRESQL_DATABASE=ema_random
