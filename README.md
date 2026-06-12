@@ -59,6 +59,16 @@ uvicorn server.main:app --reload
 
 Open: `http://127.0.0.1:8000`
 
+## OpenShift
+
+Set the launcher to:
+
+```text
+APP_FILE=app.py
+```
+
+The root `app.py` imports `server.main:app` and also supports `python app.py` locally.
+
 ## Auth
 
 API routes are protected with session auth (`/api/*` except auth endpoints).
