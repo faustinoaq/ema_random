@@ -37,6 +37,8 @@ scheduler = BackgroundScheduler()
 AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
 AUTH_PASSWORD_HASH = os.getenv("APP_AUTH_PASSWORD_HASH")
 AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "admin")
+print(f"Using auth username: {AUTH_USERNAME}")
+print(f"Using auth password hash: {AUTH_PASSWORD_HASH}")
 if not AUTH_PASSWORD_HASH:
     AUTH_PASSWORD_HASH = hashlib.sha256(AUTH_PASSWORD.encode("utf-8")).hexdigest()
 SESSION_COOKIE_NAME = "ema_session"
@@ -89,6 +91,8 @@ def login(payload: LoginPayload, request: Request, response: Response):
     try:
         time.sleep(LOGIN_DELAY_SECONDS)
         provided_password_hash = hashlib.sha256(payload.password.encode("utf-8")).hexdigest()
+        print(f"Login attempt from {client_ip} with username '{payload.username}' and password hash '{provided_password_hash}'")
+        print(f"Expected username: '{AUTH_USERNAME}' and password hash: '{AUTH_PASSWORD_HASH}'")
         if not secrets.compare_digest(payload.username, AUTH_USERNAME) or not secrets.compare_digest(
             provided_password_hash, AUTH_PASSWORD_HASH
         ):
@@ -125,7 +129,7 @@ def logout(request: Request, response: Response):
 def log_event(event: str, details: str) -> None:
     conn = get_conn()
     conn.execute(
-        "INSERT INTO logs (timestamp, event, details) VALUES (?, ?, ?)",
+        "INSERT INTO logs (timestamp, event, details) VALUES (%s, %s, %s)",
         (datetime.utcnow().isoformat(), event, details),
     )
     conn.commit()
@@ -178,7 +182,7 @@ def study_date_range(study_row) -> list[date]:
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
     participant = conn.execute(
-        "SELECT id FROM participants WHERE id = ? AND status = 'active'",
+        "SELECT id FROM participants WHERE id = %s AND status = 'active'",
         (study_row["participant_id"],),
     ).fetchone()
     if not participant:
@@ -206,7 +210,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 """
                 DELETE FROM prompts
                 WHERE participant_id = ?
-                  AND date(scheduled_time) = ?
+                  AND scheduled_time::date = %s
                   AND status != 'sent'
                 """,
                 (participant["id"], day.isoformat()),
@@ -222,7 +226,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 existing = conn.execute(
                     """
                     SELECT id FROM prompts
-                    WHERE participant_id = ? AND window_index = ? AND date(scheduled_time) = ?
+                    WHERE participant_id = %s AND window_index = %s AND scheduled_time::date = %s
                     LIMIT 1
                     """,
                     (participant["id"], idx + 1, day.isoformat()),
@@ -234,7 +238,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
             conn.execute(
                 """
                 INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
-                VALUES (?, ?, ?, 'scheduled', ?)
+                VALUES (%s, %s, %s, 'scheduled', %s)
                 """,
                 (participant["id"], idx + 1, scheduled_dt, survey_link),
             )
@@ -286,7 +290,8 @@ def create_participant(payload: ParticipantIn):
         cur = conn.execute(
             """
             INSERT INTO participants (participant_id, phone, redcap_record_id, status)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
             """,
             (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status),
         )
@@ -294,8 +299,8 @@ def create_participant(payload: ParticipantIn):
         conn.close()
         raise HTTPException(status_code=400, detail="Participant ID must be unique")
     conn.commit()
-    new_id = cur.lastrowid
-    row = conn.execute("SELECT * FROM participants WHERE id = ?", (new_id,)).fetchone()
+    new_id = cur.fetchone()["id"]
+    row = conn.execute("SELECT * FROM participants WHERE id = %s", (new_id,)).fetchone()
     conn.close()
     log_event("participant_created", f"id={new_id}")
     return dict(row)
@@ -308,8 +313,8 @@ def update_participant(participant_id: int, payload: ParticipantIn):
         conn.execute(
             """
             UPDATE participants
-            SET participant_id = ?, phone = ?, redcap_record_id = ?, status = ?
-            WHERE id = ?
+            SET participant_id = %s, phone = %s, redcap_record_id = %s, status = %s
+            WHERE id = %s
             """,
             (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status, participant_id),
         )
@@ -317,7 +322,7 @@ def update_participant(participant_id: int, payload: ParticipantIn):
         conn.close()
         raise HTTPException(status_code=400, detail="Participant ID must be unique")
     conn.commit()
-    row = conn.execute("SELECT * FROM participants WHERE id = ?", (participant_id,)).fetchone()
+    row = conn.execute("SELECT * FROM participants WHERE id = %s", (participant_id,)).fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Participant not found")
@@ -328,7 +333,7 @@ def update_participant(participant_id: int, payload: ParticipantIn):
 @app.delete("/api/participants/{participant_id}")
 def delete_participant(participant_id: int):
     conn = get_conn()
-    deleted = conn.execute("DELETE FROM participants WHERE id = ?", (participant_id,))
+    deleted = conn.execute("DELETE FROM participants WHERE id = %s", (participant_id,))
     conn.commit()
     conn.close()
     if deleted.rowcount == 0:
@@ -356,13 +361,13 @@ def list_studies():
             """
             SELECT
                 window_index,
-                date(scheduled_time) AS day,
-                strftime('%H:%M', scheduled_time) AS hhmm,
+                scheduled_time::date AS day,
+                to_char(scheduled_time::timestamp, 'HH24:MI') AS hhmm,
                 MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
             FROM prompts
             WHERE participant_id = ?
-              AND date(scheduled_time) BETWEEN ? AND ?
-            GROUP BY window_index, date(scheduled_time)
+              AND scheduled_time::date BETWEEN %s AND %s
+            GROUP BY window_index, scheduled_time::date, scheduled_time::timestamp
             ORDER BY day, window_index
             """,
             (item["participant_id"], item["start_date"], item["end_date"]),
@@ -383,12 +388,12 @@ def list_studies():
 def create_study(payload: StudyIn):
     conn = get_conn()
     validate_study_windows(payload)
-    participant = conn.execute("SELECT id FROM participants WHERE id = ?", (payload.participant_id,)).fetchone()
+    participant = conn.execute("SELECT id FROM participants WHERE id = %s", (payload.participant_id,)).fetchone()
     if not participant:
         conn.close()
         raise HTTPException(status_code=400, detail="Participant not found")
     existing = conn.execute(
-        "SELECT id FROM studies WHERE participant_id = ?",
+        "SELECT id FROM studies WHERE participant_id = %s",
         (payload.participant_id,),
     ).fetchone()
     if existing:
@@ -397,8 +402,9 @@ def create_study(payload: StudyIn):
     cur = conn.execute(
         """
         INSERT INTO studies (participant_id, comments, start_date, end_date, prompts_per_day, windows_json)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
         (
             payload.participant_id,
             payload.comments,
@@ -409,12 +415,12 @@ def create_study(payload: StudyIn):
         ),
     )
     conn.commit()
-    new_id = cur.lastrowid
-    row = conn.execute("SELECT * FROM studies WHERE id = ?", (new_id,)).fetchone()
+    new_id = cur.fetchone()["id"]
+    row = conn.execute("SELECT * FROM studies WHERE id = %s", (new_id,)).fetchone()
     conn.close()
     log_event("study_created", f"id={new_id}")
     conn = get_conn()
-    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = ?", (new_id,)).fetchone()
+    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = %s", (new_id,)).fetchone()
     if study_for_schedule:
         created = regenerate_study_schedule(conn, study_for_schedule, overwrite_unsent=True)
         log_event("schedule_generated", f"study_id={new_id} prompts_generated={created}")
@@ -429,12 +435,12 @@ def create_study(payload: StudyIn):
 def update_study(study_id: int, payload: StudyIn):
     conn = get_conn()
     validate_study_windows(payload)
-    participant = conn.execute("SELECT id FROM participants WHERE id = ?", (payload.participant_id,)).fetchone()
+    participant = conn.execute("SELECT id FROM participants WHERE id = %s", (payload.participant_id,)).fetchone()
     if not participant:
         conn.close()
         raise HTTPException(status_code=400, detail="Participant not found")
     existing = conn.execute(
-        "SELECT id FROM studies WHERE participant_id = ? AND id != ?",
+        "SELECT id FROM studies WHERE participant_id = %s AND id != %s",
         (payload.participant_id, study_id),
     ).fetchone()
     if existing:
@@ -443,9 +449,9 @@ def update_study(study_id: int, payload: StudyIn):
     updated = conn.execute(
         """
         UPDATE studies
-        SET participant_id = ?, comments = ?, start_date = ?, end_date = ?, prompts_per_day = ?, windows_json = ?
-        WHERE id = ?
-        """,
+            SET participant_id = %s, comments = %s, start_date = %s, end_date = %s, prompts_per_day = %s, windows_json = %s
+            WHERE id = %s
+            """,
         (
             payload.participant_id,
             payload.comments,
@@ -457,7 +463,7 @@ def update_study(study_id: int, payload: StudyIn):
         ),
     )
     conn.commit()
-    row = conn.execute("SELECT * FROM studies WHERE id = ?", (study_id,)).fetchone()
+    row = conn.execute("SELECT * FROM studies WHERE id = %s", (study_id,)).fetchone()
     conn.close()
     if updated.rowcount == 0 or not row:
         raise HTTPException(status_code=404, detail="Study not found")
@@ -465,7 +471,7 @@ def update_study(study_id: int, payload: StudyIn):
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
     conn = get_conn()
-    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = ?", (study_id,)).fetchone()
+    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = %s", (study_id,)).fetchone()
     if study_for_schedule:
         created = regenerate_study_schedule(conn, study_for_schedule, overwrite_unsent=True)
         log_event("schedule_generated", f"study_id={study_id} prompts_generated={created}")
@@ -477,7 +483,7 @@ def update_study(study_id: int, payload: StudyIn):
 @app.delete("/api/studies/{study_id}")
 def delete_study(study_id: int):
     conn = get_conn()
-    deleted = conn.execute("DELETE FROM studies WHERE id = ?", (study_id,))
+    deleted = conn.execute("DELETE FROM studies WHERE id = %s", (study_id,))
     conn.commit()
     conn.close()
     if deleted.rowcount == 0:
@@ -516,7 +522,7 @@ def dashboard():
         """
         SELECT COUNT(*) c
         FROM prompts
-        WHERE status='sent' AND date(sent_time) = date('now')
+        WHERE status='sent' AND sent_time::date = CURRENT_DATE
         """
     ).fetchone()["c"]
     total_prompts = conn.execute("SELECT COUNT(*) c FROM prompts").fetchone()["c"]

@@ -69,6 +69,16 @@ APP_FILE=app.py
 
 The root `app.py` imports `server.main:app` and also supports `python app.py` locally.
 
+Set PostgreSQL env vars for the cloud deployment:
+
+```env
+POSTGRESQL_USER=postgres
+POSTGRESQL_PASSWORD=change_me
+POSTGRESQL_DATABASE=ema_random
+POSTGRESQL_SERVICE_HOST=your-postgres-host
+POSTGRESQL_SERVICE_PORT=5432
+```
+
 ## Auth
 
 API routes are protected with session auth (`/api/*` except auth endpoints).
