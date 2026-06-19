@@ -56,6 +56,7 @@ let smsTargetParticipantLabel = "";
 
 function openParticipantModal() {
   if (authRequired) return;
+  document.getElementById("wakeTime").value = "08:00";
   participantModal.classList.remove("hidden");
 }
 
@@ -224,6 +225,36 @@ function toYmd(d) {
   return `${y}-${m}-${day}`;
 }
 
+function computeWindowsFromWake(wake_hhmm) {
+  const [hh, mm] = (wake_hhmm || "08:00").split(":").map(Number);
+  const base = new Date();
+  base.setHours(hh, mm, 0, 0);
+  const windows = [];
+  for (let i = 0; i < 4; i += 1) {
+    const start = new Date(base.getTime() + i * 2 * 60 * 60 * 1000);
+    const end = new Date(base.getTime() + (i + 1) * 2 * 60 * 60 * 1000);
+    const s = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+    const e = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+    windows.push({ start: s, end: e });
+  }
+  return windows;
+}
+
+function randomTimesForWindowsToday(windows) {
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString();
+  return windows.map((w) => {
+    const [sh, sm] = w.start.split(":").map(Number);
+    const start = new Date(today);
+    start.setHours(sh, sm, 0, 0);
+    // choose random time within first 30 minutes of window
+    const randOffset = Math.floor(Math.random() * 30); // 0-29 minutes
+    const dt = new Date(start.getTime() + randOffset * 60 * 1000);
+    const hhmm = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+    return { date: dateLabel, time: hhmm };
+  });
+}
+
 function getDefaultStudyDates() {
   const now = new Date();
   const todayDow = now.getDay(); // 0=Sun ... 4=Thu
@@ -370,7 +401,7 @@ async function loadParticipants() {
   renderStudyParticipantOptions(rows, studyParticipantSelect.value);
   const body = document.getElementById("participantRows");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="3">No participants added yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4">No participants added yet.</td></tr>';
     return;
   }
   body.innerHTML = rows
@@ -378,8 +409,9 @@ async function loadParticipants() {
       (r) => `<tr>
         <td>${r.participant_id || "-"}</td>
         <td>${r.phone}</td>
+        <td>${r.wake_time || "08:00"}</td>
         <td>
-          <button type="button" class="secondary action edit-participant" data-id="${r.id}" data-participant-id="${encodeAttr(r.participant_id || "")}" data-phone="${encodeAttr(r.phone)}" data-status="${encodeAttr(r.status || "active")}">Edit</button>
+          <button type="button" class="secondary action edit-participant" data-id="${r.id}" data-participant-id="${encodeAttr(r.participant_id || "")}" data-phone="${encodeAttr(r.phone)}" data-wake-time="${encodeAttr(r.wake_time || "08:00")}" data-status="${encodeAttr(r.status || "active")}">Edit</button>
           <button type="button" class="secondary action sms-participant" data-id="${r.id}" data-participant-id="${encodeAttr(r.participant_id || "")}" data-phone="${encodeAttr(r.phone)}">Send SMS</button>
           <button type="button" class="secondary action delete-participant" data-id="${r.id}">Remove</button>
         </td>
@@ -392,6 +424,7 @@ async function loadParticipants() {
       editingParticipantStatus = decodeURIComponent(btn.dataset.status || "active");
       document.getElementById("participantCode").value = decodeURIComponent(btn.dataset.participantId || "");
       document.getElementById("phone").value = decodeURIComponent(btn.dataset.phone || "");
+      document.getElementById("wakeTime").value = decodeURIComponent(btn.dataset.wakeTime || "08:00");
       document.getElementById("participantModalTitle").textContent = "Edit Participant";
       participantSubmitBtn.textContent = "Save";
       openParticipantModal();
@@ -556,6 +589,7 @@ document.getElementById("participantForm").addEventListener("submit", async (e) 
   const payload = {
     participant_id: document.getElementById("participantCode").value.trim(),
     phone: document.getElementById("phone").value.trim(),
+    wake_time: document.getElementById("wakeTime").value,
     status: editingParticipant ? editingParticipantStatus : "active",
   };
   try {
@@ -575,6 +609,45 @@ document.getElementById("participantForm").addEventListener("submit", async (e) 
   participantSubmitBtn.textContent = "Save";
   closeParticipantModal();
   await Promise.all([loadParticipants(), loadDashboard(), loadLogs()]);
+});
+
+document.getElementById("generateParticipantWindowsBtn").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (!editingParticipant) {
+    openMessageModal("Save Participant First", "Please save or edit an existing participant before generating windows.");
+    return;
+  }
+  const wake = document.getElementById("wakeTime").value || "08:00";
+  const windows = computeWindowsFromWake(wake);
+  // Update global windowTimes and reset links
+  for (let i = 1; i <= 4; i += 1) {
+    windowTimes[i] = { start: windows[i - 1].start, end: windows[i - 1].end };
+    windowLinks[i] = "";
+  }
+
+  // Update study modal badges text
+  const badges = Array.from(document.querySelectorAll("#studyModal .window-badge"));
+  badges.forEach((btn, idx) => {
+    const i = idx + 1;
+    btn.innerHTML = `<strong>Window ${i}:</strong> ${windowTimes[i].start} - ${windowTimes[i].end} <span class="window-status"></span>`;
+  });
+
+  // Prefill study modal for this participant
+  const defaults = getDefaultStudyDates();
+  studyParticipantSelect.value = String(editingParticipant);
+  document.getElementById("startDate").value = defaults.startDate;
+  document.getElementById("endDate").value = defaults.endDate;
+  document.getElementById("promptsPerDay").value = 4;
+  for (let i = 1; i <= 4; i += 1) windowLinks[i] = "";
+  updateWindowBadgeStates();
+  document.getElementById("studyModalTitle").textContent = "New Study (generated)";
+  studySubmitBtn.textContent = "Save";
+  openStudyModal();
+
+  // Show generated random times preview for today
+  const randoms = randomTimesForWindowsToday(windows);
+  const list = randoms.map((r, idx) => `Window ${idx + 1}: ${r.time}`).join("\n");
+  openMessageModal("Generated Random Times (today)", list);
 });
 
 document.getElementById("studyForm").addEventListener("submit", async (e) => {
