@@ -31,7 +31,7 @@
         <div class="table-scroll">
           <table class="participants-table">
             <thead>
-              <tr><th>Participant ID</th><th>Phone</th><th>Wake Time</th><th>Actions</th></tr>
+              <tr><th>Participant ID</th><th>Phone</th><th>Actions</th></tr>
             </thead>
             <tbody id="participantRows"></tbody>
           </table>
@@ -76,12 +76,7 @@
         <form id="participantForm" class="stack">
           <input id="participantCode" placeholder="Participant ID" required />
           <input id="phone" placeholder="+15551234567" required />
-          <label for="wakeTime">Wake Time</label>
-          <input id="wakeTime" type="time" value="08:00" />
-          <div class="row">
-            <button id="generateParticipantWindowsBtn" type="button" class="fit secondary">Generate Windows</button>
-            <button type="submit" class="fit primary">Save</button>
-          </div>
+          <button type="submit" class="fit primary">Save</button>
         </form>
       </div>
     </div>
