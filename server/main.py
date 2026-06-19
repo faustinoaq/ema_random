@@ -201,32 +201,6 @@ def random_time_first_30_minutes_for_day(day: date, start_hhmm: str, end_hhmm: s
     return start_dt.fromtimestamp(start_dt.timestamp() + random.randint(0, delta))
 
 
-def adjust_windows_for_wake_time(windows: list[dict], wake_time_hhmm: str) -> list[dict]:
-    if not windows or not wake_time_hhmm:
-        return windows
-    try:
-        base_start = datetime.fromisoformat(f"2000-01-01T{windows[0]['start']}:00")
-        wake_start = datetime.fromisoformat(f"2000-01-01T{wake_time_hhmm}:00")
-    except ValueError:
-        return windows
-    offset = wake_start - base_start
-    adjusted_windows: list[dict] = []
-    for window in windows:
-        try:
-            start_dt = datetime.fromisoformat(f"2000-01-01T{window['start']}:00") + offset
-            end_dt = datetime.fromisoformat(f"2000-01-01T{window['end']}:00") + offset
-        except ValueError:
-            continue
-        adjusted_windows.append(
-            {
-                "start": start_dt.strftime("%H:%M"),
-                "end": end_dt.strftime("%H:%M"),
-                "link": window.get("link"),
-            }
-        )
-    return adjusted_windows
-
-
 def validate_study_windows(payload: StudyIn) -> None:
     if len(payload.windows) < payload.prompts_per_day:
         raise HTTPException(
@@ -251,14 +225,13 @@ def study_date_range(study_row) -> list[date]:
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
     participant = conn.execute(
-        "SELECT id, wake_time FROM participants WHERE id = %s AND status = 'active'",
+        "SELECT id FROM participants WHERE id = %s AND status = 'active'",
         (study_row["participant_id"],),
     ).fetchone()
     if not participant:
         return 0
 
     windows = json.loads(study_row["windows_json"])
-    windows = adjust_windows_for_wake_time(windows, participant.get("wake_time", "08:00"))
     if not windows:
         log_event("schedule_skipped", f"study_id={study_row['id']} has no windows")
         return 0
@@ -359,11 +332,11 @@ def create_participant(payload: ParticipantIn):
     try:
         cur = conn.execute(
             """
-            INSERT INTO participants (participant_id, phone, redcap_record_id, status, wake_time)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO participants (participant_id, phone, redcap_record_id, status)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
             """,
-            (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status, payload.wake_time),
+            (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status),
         )
     except Exception:
         conn.close()
@@ -383,10 +356,10 @@ def update_participant(participant_id: int, payload: ParticipantIn):
         conn.execute(
             """
             UPDATE participants
-            SET participant_id = %s, phone = %s, redcap_record_id = %s, status = %s, wake_time = %s
+            SET participant_id = %s, phone = %s, redcap_record_id = %s, status = %s
             WHERE id = %s
             """,
-            (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status, payload.wake_time, participant_id),
+            (payload.participant_id, payload.phone, payload.redcap_record_id, payload.status, participant_id),
         )
     except Exception:
         conn.close()

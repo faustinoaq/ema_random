@@ -10,7 +10,6 @@ class ParticipantIn(BaseModel):
     phone: str
     redcap_record_id: str | None = None
     status: str = "active"
-    wake_time: str = Field(default="08:00", regex=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 
 class ParticipantOut(ParticipantIn):
