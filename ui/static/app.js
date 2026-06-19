@@ -16,6 +16,34 @@ const windowTimes = {
   4: { start: "15:30", end: "17:30" },
 };
 let activeWindow = null;
+
+function formatTime(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function computeStudyWindowsFromWake(wakeTime) {
+  const [hours, minutes] = (wakeTime || "08:00").split(":").map(Number);
+  const base = new Date();
+  base.setHours(hours, minutes, 0, 0);
+  const windows = [];
+  for (let i = 0; i < 4; i += 1) {
+    const start = new Date(base.getTime() + i * 150 * 60 * 1000);
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    windows.push({ start: formatTime(start), end: formatTime(end) });
+  }
+  return windows;
+}
+
+function refreshStudyWindowLabels(wakeTime = document.getElementById("studyWakeTime")?.value || "08:00") {
+  const windows = computeStudyWindowsFromWake(wakeTime);
+  for (let i = 1; i <= 4; i += 1) {
+    windowTimes[i] = { start: windows[i - 1].start, end: windows[i - 1].end };
+    const btn = document.querySelector(`#studyModal .window-badge[data-window="${i}"]`);
+    if (btn) {
+      btn.innerHTML = `<strong>Window ${i}:</strong> ${windowTimes[i].start} - ${windowTimes[i].end} <span class="window-status"></span>`;
+    }
+  }
+}
 let editingParticipant = null;
 let editingParticipantStatus = "active";
 let editingStudy = null;
@@ -263,6 +291,8 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   const defaults = getDefaultStudyDates();
   document.getElementById("startDate").value = defaults.startDate;
   document.getElementById("endDate").value = defaults.endDate;
+  document.getElementById("studyWakeTime").value = "08:00";
+  refreshStudyWindowLabels("08:00");
   document.getElementById("promptsPerDay").value = 4;
   for (let i = 1; i <= 4; i += 1) windowLinks[i] = "";
   updateWindowBadgeStates();
@@ -585,6 +615,8 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
       return;
     }
   }
+  const wakeTime = document.getElementById("studyWakeTime").value || "08:00";
+  refreshStudyWindowLabels(wakeTime);
   const payload = {
     participant_id: Number(studyParticipantSelect.value),
     comments: document.getElementById("studyComments").value.trim(),
