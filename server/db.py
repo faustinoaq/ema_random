@@ -37,7 +37,8 @@ def init_db() -> None:
             participant_id TEXT UNIQUE,
             phone TEXT NOT NULL,
             redcap_record_id TEXT,
-            status TEXT NOT NULL DEFAULT 'active'
+            status TEXT NOT NULL DEFAULT 'active',
+            wake_time TEXT NOT NULL DEFAULT '08:00'
         )
         """
     )
@@ -89,6 +90,11 @@ def init_db() -> None:
         )
         """
     )
+
+    try:
+        cur.execute("ALTER TABLE participants ADD COLUMN wake_time TEXT NOT NULL DEFAULT '08:00'")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
