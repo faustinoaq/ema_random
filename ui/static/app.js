@@ -15,7 +15,9 @@ const windowTimes = {
   3: { start: "13:00", end: "15:00" },
   4: { start: "15:30", end: "17:30" },
 };
+const additionalSurveyLinks = { end_of_day: "", dry_blood_spot: "" };
 let activeWindow = null;
+let activeAdditionalSurveyType = "";
 
 function formatTime(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -91,6 +93,8 @@ const eodSurveyTimeInput = document.getElementById("eodSurveyTime");
 const dbsSurveyTimeInput = document.getElementById("dbsSurveyTime");
 const eodSurveyUrlPreview = document.getElementById("eodSurveyUrlPreview");
 const dbsSurveyUrlPreview = document.getElementById("dbsSurveyUrlPreview");
+const openEodLinkBtn = document.getElementById("openEodLinkBtn");
+const openDbsLinkBtn = document.getElementById("openDbsLinkBtn");
 const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
 const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateModalX");
 const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
@@ -190,6 +194,7 @@ function openLinkModal(title, value, readonly = false, scheduleItems = []) {
 function closeLinkModal() {
   linkModal.classList.add("hidden");
   activeWindow = null;
+  activeAdditionalSurveyType = "";
 }
 
 function openConfirmModal(title, message, onConfirm, actionLabel = "Remove") {
@@ -289,10 +294,10 @@ function getWindowRawLink(windowNumber) {
 
 function getAdditionalSurveyRawLink(surveyType) {
   if (surveyType === "end_of_day") {
-    return stripPidFromUrl(surveyTemplateDefaults.end_of_day || "");
+    return stripPidFromUrl(additionalSurveyLinks.end_of_day || surveyTemplateDefaults.end_of_day || "");
   }
   if (surveyType === "dry_blood_spot") {
-    return stripPidFromUrl(surveyTemplateDefaults.dry_blood_spot || "");
+    return stripPidFromUrl(additionalSurveyLinks.dry_blood_spot || surveyTemplateDefaults.dry_blood_spot || "");
   }
   return "";
 }
@@ -425,11 +430,27 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("promptsPerDay").value = 4;
   eodSurveyTimeInput.value = "20:00";
   dbsSurveyTimeInput.value = "19:30";
+  additionalSurveyLinks.end_of_day = "";
+  additionalSurveyLinks.dry_blood_spot = "";
   applySurveyTemplateDefaultsToStudy();
   refreshAdditionalSurveyPreviewLinks();
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
   openStudyModal();
+});
+
+openEodLinkBtn.addEventListener("click", () => {
+  if (authRequired) return;
+  activeWindow = null;
+  activeAdditionalSurveyType = "end_of_day";
+  openLinkModal("Set Link for EOD Survey", getAdditionalSurveyRawLink("end_of_day"), false);
+});
+
+openDbsLinkBtn.addEventListener("click", () => {
+  if (authRequired) return;
+  activeWindow = null;
+  activeAdditionalSurveyType = "dry_blood_spot";
+  openLinkModal("Set Link for DBS Survey", getAdditionalSurveyRawLink("dry_blood_spot"), false);
 });
 
 document.getElementById("closeSurveyTemplateModalX").addEventListener("click", closeSurveyTemplateModal);
@@ -483,12 +504,18 @@ document.getElementById("confirmDeleteBtn").addEventListener("click", async () =
 });
 document.getElementById("closeWindowLinkBtn").addEventListener("click", closeLinkModal);
 document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
-  if (!activeWindow) return;
   const value = windowLinkInput.value.trim();
   if (!isValidHttpUrl(value)) {
     openMessageModal("Invalid Link", "Please enter a valid URL starting with http:// or https://");
     return;
   }
+  if (activeAdditionalSurveyType) {
+    additionalSurveyLinks[activeAdditionalSurveyType] = stripPidFromUrl(value);
+    refreshAdditionalSurveyPreviewLinks();
+    closeLinkModal();
+    return;
+  }
+  if (!activeWindow) return;
   windowLinks[activeWindow] = stripPidFromUrl(value);
   updateWindowBadgeStates();
   closeLinkModal();
@@ -724,6 +751,8 @@ async function loadStudies() {
       const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
       eodSurveyTimeInput.value = eodSurvey?.time || "20:00";
       dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
+      additionalSurveyLinks.end_of_day = stripPidFromUrl(eodSurvey?.link || "");
+      additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
       }
@@ -872,7 +901,7 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     return;
   }
   if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link) {
-    openMessageModal("Missing Template URLs", "Please configure EOD and DBS links in Survey Templates first.");
+    openMessageModal("Missing Survey URLs", "Please set links for EOD and DBS surveys.");
     return;
   }
   try {
