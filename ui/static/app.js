@@ -289,6 +289,11 @@ function getWindowPreviewLink(windowNumber) {
   return appendPidToUrl(rawLink, pid);
 }
 
+function getReadonlyWindowPreviewLink(link, participantPid) {
+  if (!link) return "";
+  return appendPidToUrl(stripPidFromUrl(link), participantPid || "");
+}
+
 function isValidHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -614,7 +619,7 @@ async function loadStudies() {
       const windows = (r.windows || [])
         .map((w, i) => {
           const schedule = r.window_schedules?.[String(i + 1)] || [];
-          return `<button type="button" class="tag button-tag" data-link="${encodeAttr(w.link || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
+          return `<button type="button" class="tag button-tag" data-link="${encodeAttr(w.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
         })
         .join("");
       return `<tr>
@@ -632,7 +637,10 @@ async function loadStudies() {
   body.querySelectorAll(".button-tag").forEach((btn) => {
     btn.addEventListener("click", () => {
       const label = btn.dataset.label || "Window";
-      const link = decodeURIComponent(btn.dataset.link || "") || "No link configured";
+      const rawLink = decodeURIComponent(btn.dataset.link || "");
+      const participantPid = decodeURIComponent(btn.dataset.participantPid || "");
+      const previewLink = getReadonlyWindowPreviewLink(rawLink, participantPid);
+      const link = previewLink || rawLink || "No link configured";
       let scheduleItems = [];
       try {
         scheduleItems = JSON.parse(decodeURIComponent(btn.dataset.schedule || "[]"));
