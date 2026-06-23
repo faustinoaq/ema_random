@@ -10,7 +10,10 @@
     <main id="appRoot" class="container hidden">
       <div class="topbar">
         <h1>LupusConnect</h1>
-        <button id="logoutBtn" type="button" class="fit secondary">Logout</button>
+        <div class="row">
+          <button id="openSurveyTemplatesBtn" type="button" class="fit secondary">Survey Templates</button>
+          <button id="logoutBtn" type="button" class="fit secondary">Logout</button>
+        </div>
       </div>
 
       <section class="grid stats">
@@ -147,6 +150,43 @@
           <button id="confirmDeleteBtn" type="button" class="fit primary">Remove</button>
           <button id="cancelConfirmBtn" type="button" class="fit secondary">Cancel</button>
         </div>
+      </div>
+    </div>
+
+    <div id="surveyTemplateModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <button id="closeSurveyTemplateModalX" type="button" class="modal-x" aria-label="Close">x</button>
+        <h3>Survey Templates</h3>
+        <form id="surveyTemplateForm" class="stack">
+          <div class="field">
+            <label for="templateWindow1">Window 1 (Morning EMA)</label>
+            <input id="templateWindow1" type="url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="templateWindow2">Window 2 (Regular EMA)</label>
+            <input id="templateWindow2" type="url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="templateWindow3">Window 3 (Regular EMA)</label>
+            <input id="templateWindow3" type="url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="templateWindow4">Window 4 (Regular EMA)</label>
+            <input id="templateWindow4" type="url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="templateEod">End of Day (EOD)</label>
+            <input id="templateEod" type="url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="templateDbs">Dry Blood Spot (DBS)</label>
+            <input id="templateDbs" type="url" placeholder="https://..." required />
+          </div>
+          <div class="row">
+            <button id="saveSurveyTemplatesBtn" type="submit" class="fit primary">Save Templates</button>
+            <button id="closeSurveyTemplatesBtn" type="button" class="fit secondary">Close</button>
+          </div>
+        </form>
       </div>
     </div>
 

@@ -79,8 +79,28 @@ const exportParticipantsCsvBtn = document.getElementById("exportParticipantsCsvB
 const exportStudiesCsvBtn = document.getElementById("exportStudiesCsvBtn");
 const authSubmitBtn = document.getElementById("authSubmitBtn");
 const appRoot = document.getElementById("appRoot");
+const surveyTemplateModal = document.getElementById("surveyTemplateModal");
+const surveyTemplateForm = document.getElementById("surveyTemplateForm");
+const templateWindow1 = document.getElementById("templateWindow1");
+const templateWindow2 = document.getElementById("templateWindow2");
+const templateWindow3 = document.getElementById("templateWindow3");
+const templateWindow4 = document.getElementById("templateWindow4");
+const templateEod = document.getElementById("templateEod");
+const templateDbs = document.getElementById("templateDbs");
+const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
+const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateModalX");
+const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
+const closeSurveyTemplatesBtn = document.getElementById("closeSurveyTemplatesBtn");
 let smsTargetParticipantId = null;
 let smsTargetParticipantLabel = "";
+let surveyTemplateDefaults = {
+  window_1: "",
+  window_2: "",
+  window_3: "",
+  window_4: "",
+  end_of_day: "",
+  dry_blood_spot: "",
+};
 
 function openParticipantModal() {
   if (authRequired) return;
@@ -94,6 +114,23 @@ function closeParticipantModal() {
 function openStudyModal() {
   if (authRequired) return;
   studyModal.classList.remove("hidden");
+}
+
+function applySurveyTemplateDefaultsToStudy() {
+  windowLinks[1] = surveyTemplateDefaults.window_1;
+  windowLinks[2] = surveyTemplateDefaults.window_2;
+  windowLinks[3] = surveyTemplateDefaults.window_3;
+  windowLinks[4] = surveyTemplateDefaults.window_4;
+  updateWindowBadgeStates();
+}
+
+function openSurveyTemplateModal() {
+  if (authRequired) return;
+  surveyTemplateModal.classList.remove("hidden");
+}
+
+function closeSurveyTemplateModal() {
+  surveyTemplateModal.classList.add("hidden");
 }
 
 function closeStudyModal() {
@@ -294,18 +331,49 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("studyWakeTime").value = "08:00";
   refreshStudyWindowLabels("08:00");
   document.getElementById("promptsPerDay").value = 4;
-  for (let i = 1; i <= 4; i += 1) windowLinks[i] = "";
-  updateWindowBadgeStates();
+  applySurveyTemplateDefaultsToStudy();
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
   openStudyModal();
 });
 
-document.getElementById("closeParticipantModalX").addEventListener("click", closeParticipantModal);
-document.getElementById("closeStudyModalX").addEventListener("click", closeStudyModal);
-document.getElementById("closeWindowLinkModalX").addEventListener("click", closeLinkModal);
-document.getElementById("closeConfirmModalX").addEventListener("click", closeConfirmModal);
-document.getElementById("cancelConfirmBtn").addEventListener("click", closeConfirmModal);
+document.getElementById("closeSurveyTemplateModalX").addEventListener("click", closeSurveyTemplateModal);
+document.getElementById("closeSurveyTemplatesBtn").addEventListener("click", closeSurveyTemplateModal);
+document.getElementById("openSurveyTemplatesBtn").addEventListener("click", async () => {
+  await loadSurveyTemplates();
+  openSurveyTemplateModal();
+});
+
+surveyTemplateForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  saveSurveyTemplatesBtn.disabled = true;
+  saveSurveyTemplatesBtn.textContent = "Saving...";
+  try {
+    const payload = {
+      window_1: templateWindow1.value.trim(),
+      window_2: templateWindow2.value.trim(),
+      window_3: templateWindow3.value.trim(),
+      window_4: templateWindow4.value.trim(),
+      end_of_day: templateEod.value.trim(),
+      dry_blood_spot: templateDbs.value.trim(),
+    };
+    const result = await getJSON("/api/settings/survey-templates", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    surveyTemplateDefaults = result;
+    applySurveyTemplateDefaultsToStudy();
+    closeSurveyTemplateModal();
+    openMessageModal("Survey Templates Saved", "Survey template URLs have been updated successfully.");
+  } catch (err) {
+    openMessageModal("Unable to Save", err.message || "Unable to save survey templates.");
+  } finally {
+    saveSurveyTemplatesBtn.disabled = false;
+    saveSurveyTemplatesBtn.textContent = "Save Templates";
+  }
+});
+
 document.getElementById("closeMessageModalX").addEventListener("click", closeMessageModal);
 document.getElementById("closeMessageBtn").addEventListener("click", closeMessageModal);
 document.getElementById("closeSmsModalX").addEventListener("click", closeSmsModal);
@@ -377,7 +445,7 @@ document.getElementById("authForm").addEventListener("submit", async (e) => {
       throw new Error(await res.text());
     }
     closeAuthModal();
-    await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
+    await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies(), loadSurveyTemplates()]);
   } catch {
     openMessageModal("Sign In Failed", "Invalid username or password.");
   } finally {
@@ -385,6 +453,17 @@ document.getElementById("authForm").addEventListener("submit", async (e) => {
     authSubmitBtn.textContent = "Sign In";
   }
 });
+
+async function loadSurveyTemplates() {
+  const data = await getJSON("/api/settings/survey-templates");
+  surveyTemplateDefaults = data;
+  templateWindow1.value = data.window_1 || "";
+  templateWindow2.value = data.window_2 || "";
+  templateWindow3.value = data.window_3 || "";
+  templateWindow4.value = data.window_4 || "";
+  templateEod.value = data.end_of_day || "";
+  templateDbs.value = data.dry_blood_spot || "";
+}
 
 async function loadDashboard() {
   const data = await getJSON("/api/dashboard");
@@ -680,7 +759,7 @@ async function bootstrap() {
     return;
   }
   closeAuthModal();
-  await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies()]);
+  await Promise.all([loadDashboard(), loadParticipants(), loadLogs(), loadStudies(), loadSurveyTemplates()]);
 }
 
 bootstrap();

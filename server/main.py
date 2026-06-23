@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 from .db import get_conn, init_db
 from .schemas import ParticipantIn, StudyIn
@@ -62,10 +62,37 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 
+SURVEY_TEMPLATE_KEYS = {
+    "survey_template_window_1": "window_1",
+    "survey_template_window_2": "window_2",
+    "survey_template_window_3": "window_3",
+    "survey_template_window_4": "window_4",
+    "survey_template_end_of_day": "end_of_day",
+    "survey_template_dry_blood_spot": "dry_blood_spot",
+}
+
+DEFAULT_SURVEY_TEMPLATES = {
+    "survey_template_window_1": "https://unc.az1.qualtrics.com/jfe/form/SV_ah2x6h9D99T3TMO",
+    "survey_template_window_2": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
+    "survey_template_window_3": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
+    "survey_template_window_4": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
+    "survey_template_end_of_day": "https://unc.az1.qualtrics.com/jfe/form/SV_9Hr3krARf8PC3KS",
+    "survey_template_dry_blood_spot": "https://unc.az1.qualtrics.com/jfe/form/SV_b47bAEoLoUNCi8e",
+}
+
 
 class LoginPayload(BaseModel):
     username: str
     password: str
+
+
+class SurveyTemplatesPayload(BaseModel):
+    window_1: HttpUrl
+    window_2: HttpUrl
+    window_3: HttpUrl
+    window_4: HttpUrl
+    end_of_day: HttpUrl
+    dry_blood_spot: HttpUrl
 
 
 @app.middleware("http")
@@ -140,6 +167,32 @@ def logout(request: Request, response: Response):
     return {"ok": True}
 
 
+@app.get("/api/settings/survey-templates")
+def get_survey_template_settings():
+    conn = get_conn()
+    templates = get_survey_templates(conn)
+    conn.close()
+    return templates
+
+
+@app.put("/api/settings/survey-templates")
+def update_survey_template_settings(payload: SurveyTemplatesPayload):
+    conn = get_conn()
+    upsert_setting(conn, "survey_template_window_1", str(payload.window_1))
+    upsert_setting(conn, "survey_template_window_2", str(payload.window_2))
+    upsert_setting(conn, "survey_template_window_3", str(payload.window_3))
+    upsert_setting(conn, "survey_template_window_4", str(payload.window_4))
+    upsert_setting(conn, "survey_template_end_of_day", str(payload.end_of_day))
+    upsert_setting(conn, "survey_template_dry_blood_spot", str(payload.dry_blood_spot))
+    conn.commit()
+    conn.close()
+    log_event("settings_updated", "survey_template_links")
+    conn2 = get_conn()
+    templates = get_survey_templates(conn2)
+    conn2.close()
+    return templates
+
+
 def log_event(event: str, details: str) -> None:
     conn = get_conn()
     conn.execute(
@@ -148,6 +201,61 @@ def log_event(event: str, details: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def get_setting(conn, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM settings WHERE key = %s", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def upsert_setting(conn, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (key, value),
+    )
+
+
+def ensure_default_settings(conn) -> None:
+    for key, value in DEFAULT_SURVEY_TEMPLATES.items():
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+            (key, value),
+        )
+
+
+def get_survey_templates(conn) -> dict[str, str]:
+    result = {
+        "window_1": DEFAULT_SURVEY_TEMPLATES["survey_template_window_1"],
+        "window_2": DEFAULT_SURVEY_TEMPLATES["survey_template_window_2"],
+        "window_3": DEFAULT_SURVEY_TEMPLATES["survey_template_window_3"],
+        "window_4": DEFAULT_SURVEY_TEMPLATES["survey_template_window_4"],
+        "end_of_day": DEFAULT_SURVEY_TEMPLATES["survey_template_end_of_day"],
+        "dry_blood_spot": DEFAULT_SURVEY_TEMPLATES["survey_template_dry_blood_spot"],
+    }
+    keys = list(DEFAULT_SURVEY_TEMPLATES.keys())
+    placeholders = ", ".join(["%s"] * len(keys))
+    rows = conn.execute(
+        f"SELECT key, value FROM settings WHERE key IN ({placeholders})",
+        tuple(keys),
+    ).fetchall()
+    for row in rows:
+        mapped_key = SURVEY_TEMPLATE_KEYS.get(row["key"])
+        if mapped_key:
+            result[mapped_key] = row["value"]
+    return result
+
+
+def get_default_survey_template_for_window_index(conn, index: int) -> str | None:
+    if index == 1:
+        return get_setting(conn, "survey_template_window_1")
+    if index in (2, 3, 4):
+        return get_setting(conn, f"survey_template_window_{index}")
+    return None
+
+
+def get_default_setting_values(conn) -> dict[str, str]:
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    return {row["key"]: row["value"] for row in rows}
 
 
 def send_sms_message(to_number: str, body: str) -> None:
@@ -308,6 +416,10 @@ def generate_daily_schedule() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    conn = get_conn()
+    ensure_default_settings(conn)
+    conn.commit()
+    conn.close()
     scheduler.add_job(generate_daily_schedule, "cron", hour=0, minute=0, id="daily_generation")
     scheduler.start()
 
