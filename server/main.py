@@ -208,6 +208,16 @@ def get_setting(conn, key: str) -> str | None:
     return row["value"] if row else None
 
 
+def append_pid_to_url(url: str, pid: str) -> str:
+    if not pid:
+        return url
+    parsed = urllib.parse.urlparse(url)
+    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query_items.append(("pid", pid))
+    query = urllib.parse.urlencode(query_items, doseq=True)
+    return urllib.parse.urlunparse(parsed._replace(query=query))
+
+
 def upsert_setting(conn, key: str, value: str) -> None:
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
@@ -333,10 +343,15 @@ def study_date_range(study_row) -> list[date]:
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
     participant = conn.execute(
-        "SELECT id FROM participants WHERE id = %s AND status = 'active'",
+        "SELECT id, participant_id FROM participants WHERE id = %s AND status = 'active'",
         (study_row["participant_id"],),
     ).fetchone()
     if not participant:
+        return 0
+
+    participant_pid = (participant["participant_id"] or "").strip()
+    if not participant_pid:
+        log_event("schedule_skipped", f"study_id={study_row['id']} missing participant_id for pid")
         return 0
 
     windows = json.loads(study_row["windows_json"])
@@ -386,12 +401,13 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                     continue
 
             scheduled_dt = random_time_first_30_minutes_for_day(day, window["start"], window["end"]).isoformat()
+            full_link = append_pid_to_url(survey_link, participant_pid)
             conn.execute(
                 """
                 INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
                 VALUES (%s, %s, %s, 'scheduled', %s)
                 """,
-                (participant["id"], idx + 1, scheduled_dt, survey_link),
+                (participant["id"], idx + 1, scheduled_dt, full_link),
             )
             scheduled_count += 1
 
