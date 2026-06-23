@@ -243,6 +243,52 @@ function encodeAttr(value) {
   return encodeURIComponent(value || "");
 }
 
+function stripPidFromUrl(value) {
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    parsed.searchParams.delete("pid");
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+function appendPidToUrl(value, pid) {
+  if (!value || !pid) return value;
+  try {
+    const parsed = new URL(value);
+    parsed.searchParams.set("pid", pid);
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+function getSelectedStudyParticipantPid() {
+  const option = studyParticipantSelect.selectedOptions?.[0];
+  if (!option) return "";
+  return option.dataset.participantId || option.textContent.trim() || "";
+}
+
+function getDefaultWindowTemplate(windowNumber) {
+  if (windowNumber === 1) {
+    return surveyTemplateDefaults.window_1 || "";
+  }
+
+  return surveyTemplateDefaults.window_2 || surveyTemplateDefaults.window_3 || surveyTemplateDefaults.window_4 || "";
+}
+
+function getWindowRawLink(windowNumber) {
+  return stripPidFromUrl(windowLinks[windowNumber] || getDefaultWindowTemplate(windowNumber));
+}
+
+function getWindowPreviewLink(windowNumber) {
+  const rawLink = getWindowRawLink(windowNumber);
+  const pid = getSelectedStudyParticipantPid();
+  return appendPidToUrl(rawLink, pid);
+}
+
 function isValidHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -277,7 +323,9 @@ function renderStudyParticipantOptions(participants, selectedId = null) {
   const options = ['<option value="">Select participant</option>'];
   participants.forEach((p) => {
     const selected = Number(selectedId) === p.id ? " selected" : "";
-    options.push(`<option value="${p.id}"${selected}>${p.participant_id}</option>`);
+    options.push(
+      `<option value="${p.id}" data-participant-id="${encodeAttr(p.participant_id || "")}"${selected}>${p.participant_id}</option>`
+    );
   });
   studyParticipantSelect.innerHTML = options.join("");
 }
@@ -308,7 +356,8 @@ function getDefaultStudyDates() {
 windowBadges.forEach((btn) => {
   btn.addEventListener("click", () => {
     activeWindow = Number(btn.dataset.window);
-    openLinkModal(`Set Link for Window ${activeWindow}`, windowLinks[activeWindow], false);
+    openLinkModal(`Set Link for Window ${activeWindow}`, getWindowPreviewLink(activeWindow), false);
+    windowLinkInput.dataset.rawValue = getWindowRawLink(activeWindow);
   });
 });
 
@@ -393,9 +442,20 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
     openMessageModal("Invalid Link", "Please enter a valid URL starting with http:// or https://");
     return;
   }
-  windowLinks[activeWindow] = value;
+  windowLinks[activeWindow] = stripPidFromUrl(value);
   updateWindowBadgeStates();
   closeLinkModal();
+});
+
+windowLinkInput.addEventListener("input", () => {
+  windowLinkInput.dataset.rawValue = stripPidFromUrl(windowLinkInput.value.trim());
+});
+
+studyParticipantSelect.addEventListener("change", () => {
+  if (!activeWindow || windowLinkInput.readOnly) return;
+  const rawValue = stripPidFromUrl(windowLinkInput.dataset.rawValue || windowLinkInput.value.trim() || getWindowRawLink(activeWindow));
+  windowLinkInput.dataset.rawValue = rawValue;
+  windowLinkInput.value = appendPidToUrl(rawValue, getSelectedStudyParticipantPid());
 });
 
 document.getElementById("smsForm").addEventListener("submit", async (e) => {
@@ -593,9 +653,11 @@ async function loadStudies() {
       document.getElementById("endDate").value = study.end_date;
       document.getElementById("promptsPerDay").value = 4;
       document.getElementById("studyComments").value = study.comments || "";
+      document.getElementById("studyWakeTime").value = study.windows?.[0]?.start || "08:00";
       for (let i = 1; i <= 4; i += 1) {
-        windowLinks[i] = study.windows?.[i - 1]?.link || "";
+        windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
       }
+      refreshStudyWindowLabels(document.getElementById("studyWakeTime").value || "08:00");
       updateWindowBadgeStates();
       document.getElementById("studyModalTitle").textContent = "Edit Study";
       studySubmitBtn.textContent = "Save";
@@ -690,7 +752,9 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   for (let i = 1; i <= 4; i += 1) {
     if (!windowLinks[i]) {
-      openLinkModal(`Set Link for Window ${i}`, windowLinks[i], false);
+      activeWindow = i;
+      openLinkModal(`Set Link for Window ${i}`, getWindowPreviewLink(i), false);
+      windowLinkInput.dataset.rawValue = getWindowRawLink(i);
       return;
     }
   }
