@@ -87,6 +87,10 @@ const templateWindow3 = document.getElementById("templateWindow3");
 const templateWindow4 = document.getElementById("templateWindow4");
 const templateEod = document.getElementById("templateEod");
 const templateDbs = document.getElementById("templateDbs");
+const eodSurveyTimeInput = document.getElementById("eodSurveyTime");
+const dbsSurveyTimeInput = document.getElementById("dbsSurveyTime");
+const eodSurveyUrlPreview = document.getElementById("eodSurveyUrlPreview");
+const dbsSurveyUrlPreview = document.getElementById("dbsSurveyUrlPreview");
 const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
 const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateModalX");
 const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
@@ -283,6 +287,22 @@ function getWindowRawLink(windowNumber) {
   return stripPidFromUrl(windowLinks[windowNumber] || getDefaultWindowTemplate(windowNumber));
 }
 
+function getAdditionalSurveyRawLink(surveyType) {
+  if (surveyType === "end_of_day") {
+    return stripPidFromUrl(surveyTemplateDefaults.end_of_day || "");
+  }
+  if (surveyType === "dry_blood_spot") {
+    return stripPidFromUrl(surveyTemplateDefaults.dry_blood_spot || "");
+  }
+  return "";
+}
+
+function getAdditionalSurveyPreviewLink(surveyType) {
+  const rawLink = getAdditionalSurveyRawLink(surveyType);
+  const pid = getSelectedStudyParticipantPid();
+  return appendPidToUrl(rawLink, pid);
+}
+
 function getWindowPreviewLink(windowNumber) {
   const rawLink = getWindowRawLink(windowNumber);
   const pid = getSelectedStudyParticipantPid();
@@ -301,6 +321,24 @@ function isValidHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+function setSurveyPreviewLink(anchorEl, url) {
+  if (!anchorEl) return;
+  if (!url) {
+    anchorEl.textContent = "-";
+    anchorEl.href = "#";
+    anchorEl.setAttribute("aria-disabled", "true");
+    return;
+  }
+  anchorEl.textContent = url;
+  anchorEl.href = url;
+  anchorEl.removeAttribute("aria-disabled");
+}
+
+function refreshAdditionalSurveyPreviewLinks() {
+  setSurveyPreviewLink(eodSurveyUrlPreview, getAdditionalSurveyPreviewLink("end_of_day"));
+  setSurveyPreviewLink(dbsSurveyUrlPreview, getAdditionalSurveyPreviewLink("dry_blood_spot"));
 }
 
 function escapeCsv(value) {
@@ -385,7 +423,10 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("studyWakeTime").value = "08:00";
   refreshStudyWindowLabels("08:00");
   document.getElementById("promptsPerDay").value = 4;
+  eodSurveyTimeInput.value = "20:00";
+  dbsSurveyTimeInput.value = "19:30";
   applySurveyTemplateDefaultsToStudy();
+  refreshAdditionalSurveyPreviewLinks();
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
   openStudyModal();
@@ -418,6 +459,7 @@ surveyTemplateForm.addEventListener("submit", async (e) => {
     });
     surveyTemplateDefaults = result;
     applySurveyTemplateDefaultsToStudy();
+    refreshAdditionalSurveyPreviewLinks();
     closeSurveyTemplateModal();
     openMessageModal("Survey Templates Saved", "Survey template URLs have been updated successfully.");
   } catch (err) {
@@ -462,6 +504,8 @@ studyParticipantSelect.addEventListener("change", () => {
   windowLinkInput.dataset.rawValue = rawValue;
   windowLinkInput.value = appendPidToUrl(rawValue, getSelectedStudyParticipantPid());
 });
+
+studyParticipantSelect.addEventListener("change", refreshAdditionalSurveyPreviewLinks);
 
 document.getElementById("smsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -528,6 +572,7 @@ async function loadSurveyTemplates() {
   templateWindow4.value = data.window_4 || "";
   templateEod.value = data.end_of_day || "";
   templateDbs.value = data.dry_blood_spot || "";
+  refreshAdditionalSurveyPreviewLinks();
 }
 
 async function loadDashboard() {
@@ -619,14 +664,27 @@ async function loadStudies() {
       const windows = (r.windows || [])
         .map((w, i) => {
           const schedule = r.window_schedules?.[String(i + 1)] || [];
-          return `<button type="button" class="tag button-tag" data-link="${encodeAttr(w.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
+          return `<button type="button" class="tag button-tag tag-window" data-link="${encodeAttr(w.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
+        })
+        .join("");
+      const additionalTagConfig = {
+        end_of_day: { short: "EOD", label: "End of Day Survey", className: "tag-eod" },
+        dry_blood_spot: { short: "DBS", label: "Dry Blood Spot Survey", className: "tag-dbs" },
+      };
+      const additionalTags = (r.additional_surveys || [])
+        .map((survey) => {
+          const cfg = additionalTagConfig[survey?.survey_type || ""];
+          if (!cfg) return "";
+          const schedule = r.additional_schedules?.[survey.survey_type] || [];
+          const timeLabel = survey?.time || "--:--";
+          return `<button type="button" class="tag button-tag ${cfg.className}" data-link="${encodeAttr(survey.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="${cfg.label}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">${cfg.short} ${timeLabel}</button>`;
         })
         .join("");
       return `<tr>
         <td>${r.participant_code || `#${r.participant_id || "-"}`}</td>
         <td>${r.start_date} to ${r.end_date}</td>
         <td>${r.comments || "-"}</td>
-        <td><div class="stacked-tags">${windows}</div></td>
+        <td><div class="stacked-tags">${windows}${additionalTags}</div></td>
         <td>
           <button type="button" class="secondary action edit-study" data-id="${r.id}">Edit</button>
           <button type="button" class="secondary action delete-study" data-id="${r.id}">Remove</button>
@@ -662,11 +720,16 @@ async function loadStudies() {
       document.getElementById("promptsPerDay").value = 4;
       document.getElementById("studyComments").value = study.comments || "";
       document.getElementById("studyWakeTime").value = study.windows?.[0]?.start || "08:00";
+      const eodSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
+      const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
+      eodSurveyTimeInput.value = eodSurvey?.time || "20:00";
+      dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
       }
       refreshStudyWindowLabels(document.getElementById("studyWakeTime").value || "08:00");
       updateWindowBadgeStates();
+      refreshAdditionalSurveyPreviewLinks();
       document.getElementById("studyModalTitle").textContent = "Edit Study";
       studySubmitBtn.textContent = "Save";
       openStudyModal();
@@ -716,7 +779,17 @@ function exportStudiesCsv() {
     return;
   }
   downloadCsv("studies.csv", [
-    ["id", "participant_id", "participant_code", "start_date", "end_date", "prompts_per_day", "comments", "windows_json"],
+    [
+      "id",
+      "participant_id",
+      "participant_code",
+      "start_date",
+      "end_date",
+      "prompts_per_day",
+      "comments",
+      "windows_json",
+      "additional_surveys_json",
+    ],
     ...studiesCache.map((row) => [
       row.id,
       row.participant_id,
@@ -726,6 +799,7 @@ function exportStudiesCsv() {
       row.prompts_per_day,
       row.comments || "",
       JSON.stringify(row.windows || []),
+      JSON.stringify(row.additional_surveys || []),
     ]),
   ]);
 }
@@ -780,9 +854,25 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
       { start: windowTimes[3].start, end: windowTimes[3].end, link: windowLinks[3] },
       { start: windowTimes[4].start, end: windowTimes[4].end, link: windowLinks[4] },
     ],
+    additional_surveys: [
+      {
+        survey_type: "end_of_day",
+        time: eodSurveyTimeInput.value || "20:00",
+        link: getAdditionalSurveyRawLink("end_of_day"),
+      },
+      {
+        survey_type: "dry_blood_spot",
+        time: dbsSurveyTimeInput.value || "19:30",
+        link: getAdditionalSurveyRawLink("dry_blood_spot"),
+      },
+    ],
   };
   if (!payload.participant_id) {
     openMessageModal("Participant Required", "Please select a participant.");
+    return;
+  }
+  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link) {
+    openMessageModal("Missing Template URLs", "Please configure EOD and DBS links in Survey Templates first.");
     return;
   }
   try {
@@ -836,3 +926,4 @@ async function bootstrap() {
 
 bootstrap();
 updateWindowBadgeStates();
+refreshAdditionalSurveyPreviewLinks();

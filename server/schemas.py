@@ -22,6 +22,12 @@ class StudyWindow(BaseModel):
     link: HttpUrl
 
 
+class AdditionalDailySurvey(BaseModel):
+    survey_type: str
+    time: str
+    link: HttpUrl
+
+
 class StudyIn(BaseModel):
     participant_id: int
     comments: str = ""
@@ -29,6 +35,7 @@ class StudyIn(BaseModel):
     end_date: str
     prompts_per_day: int = Field(default=4, ge=1, le=8)
     windows: List[StudyWindow] = Field(default_factory=list)
+    additional_surveys: List[AdditionalDailySurvey] = Field(default_factory=list)
 
 
 class StudyOut(StudyIn):

@@ -51,8 +51,16 @@ def init_db() -> None:
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
             prompts_per_day INTEGER NOT NULL DEFAULT 4,
-            windows_json TEXT NOT NULL DEFAULT '[]'
+            windows_json TEXT NOT NULL DEFAULT '[]',
+            additional_surveys_json TEXT NOT NULL DEFAULT '[]'
         )
+        """
+    )
+
+    cur.execute(
+        """
+        ALTER TABLE studies
+        ADD COLUMN IF NOT EXISTS additional_surveys_json TEXT NOT NULL DEFAULT '[]'
         """
     )
 

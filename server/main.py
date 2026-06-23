@@ -333,12 +333,47 @@ def validate_study_windows(payload: StudyIn) -> None:
             )
 
 
+def validate_hhmm(value: str, label: str) -> None:
+    parts = (value or "").split(":")
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail=f"{label} must use HH:MM format")
+    try:
+        hh = int(parts[0])
+        mm = int(parts[1])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{label} must use HH:MM format") from exc
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        raise HTTPException(status_code=400, detail=f"{label} is out of range")
+
+
+def validate_additional_daily_surveys(payload: StudyIn) -> None:
+    expected_types = {"end_of_day", "dry_blood_spot"}
+    provided_types = {item.survey_type for item in payload.additional_surveys}
+    if provided_types != expected_types:
+        raise HTTPException(
+            status_code=400,
+            detail="additional_surveys must include end_of_day and dry_blood_spot",
+        )
+    for survey in payload.additional_surveys:
+        validate_hhmm(survey.time, f"{survey.survey_type} time")
+        if not str(survey.link).strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"{survey.survey_type} link is required",
+            )
+
+
 def study_date_range(study_row) -> list[date]:
     start = date.fromisoformat(study_row["start_date"])
     end = date.fromisoformat(study_row["end_date"])
     if end < start:
         return []
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def scheduled_datetime_for_day_time(day: date, hhmm: str) -> datetime:
+    validate_hhmm(hhmm, "additional survey time")
+    return datetime.fromisoformat(f"{day.isoformat()}T{hhmm}:00")
 
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
@@ -368,6 +403,9 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
     if not days:
         log_event("schedule_skipped", f"study_id={study_row['id']} has invalid date range")
         return 0
+
+    additional_surveys = json.loads(study_row.get("additional_surveys_json") or "[]")
+    survey_index_map = {"end_of_day": 5, "dry_blood_spot": 6}
 
     scheduled_count = 0
     for day in days:
@@ -408,6 +446,45 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 VALUES (%s, %s, %s, 'scheduled', %s)
                 """,
                 (participant["id"], idx + 1, scheduled_dt, full_link),
+            )
+            scheduled_count += 1
+
+        for survey in additional_surveys:
+            survey_type = (survey.get("survey_type") or "").strip()
+            time_hhmm = (survey.get("time") or "").strip()
+            survey_link = (survey.get("link") or "").strip()
+            prompt_index = survey_index_map.get(survey_type)
+            if not prompt_index:
+                continue
+            if not survey_link or not time_hhmm:
+                log_event("schedule_skipped", f"study_id={study_row['id']} missing {survey_type} link/time")
+                continue
+
+            if not overwrite_unsent:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM prompts
+                    WHERE participant_id = %s AND window_index = %s AND scheduled_time::date = %s
+                    LIMIT 1
+                    """,
+                    (participant["id"], prompt_index, day.isoformat()),
+                ).fetchone()
+                if existing:
+                    continue
+
+            try:
+                scheduled_dt = scheduled_datetime_for_day_time(day, time_hhmm).isoformat()
+            except HTTPException:
+                log_event("schedule_skipped", f"study_id={study_row['id']} invalid {survey_type} time={time_hhmm}")
+                continue
+
+            full_link = append_pid_to_url(survey_link, participant_pid)
+            conn.execute(
+                """
+                INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
+                VALUES (%s, %s, %s, 'scheduled', %s)
+                """,
+                (participant["id"], prompt_index, scheduled_dt, full_link),
             )
             scheduled_count += 1
 
@@ -550,6 +627,7 @@ def list_studies():
     for row in rows:
         item = dict(row)
         item["windows"] = json.loads(item.pop("windows_json"))
+        item["additional_surveys"] = json.loads(item.pop("additional_surveys_json") or "[]")
         schedules = conn.execute(
             """
             SELECT
@@ -572,6 +650,17 @@ def list_studies():
                 {"date": s["day"], "time": s["hhmm"], "sent": bool(s["is_sent"])}
             )
         item["window_schedules"] = by_window
+
+        additional_schedule_labels = {5: "end_of_day", 6: "dry_blood_spot"}
+        additional_schedules: dict[str, list[dict]] = {"end_of_day": [], "dry_blood_spot": []}
+        for s in schedules:
+            label = additional_schedule_labels.get(s["window_index"])
+            if not label:
+                continue
+            additional_schedules[label].append(
+                {"date": s["day"], "time": s["hhmm"], "sent": bool(s["is_sent"])}
+            )
+        item["additional_schedules"] = additional_schedules
         output.append(item)
     conn.close()
     return output
@@ -581,6 +670,7 @@ def list_studies():
 def create_study(payload: StudyIn):
     conn = get_conn()
     validate_study_windows(payload)
+    validate_additional_daily_surveys(payload)
     participant = conn.execute("SELECT id FROM participants WHERE id = %s", (payload.participant_id,)).fetchone()
     if not participant:
         conn.close()
@@ -594,8 +684,8 @@ def create_study(payload: StudyIn):
         raise HTTPException(status_code=400, detail="This participant already has a study")
     cur = conn.execute(
         """
-        INSERT INTO studies (participant_id, comments, start_date, end_date, prompts_per_day, windows_json)
-            VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO studies (participant_id, comments, start_date, end_date, prompts_per_day, windows_json, additional_surveys_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
         (
@@ -605,6 +695,12 @@ def create_study(payload: StudyIn):
             payload.end_date,
             payload.prompts_per_day,
             json.dumps([{"start": w.start, "end": w.end, "link": str(w.link)} for w in payload.windows]),
+            json.dumps(
+                [
+                    {"survey_type": s.survey_type, "time": s.time, "link": str(s.link)}
+                    for s in payload.additional_surveys
+                ]
+            ),
         ),
     )
     conn.commit()
@@ -621,6 +717,7 @@ def create_study(payload: StudyIn):
     conn.close()
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
+    result["additional_surveys"] = json.loads(result.pop("additional_surveys_json") or "[]")
     return result
 
 
@@ -628,6 +725,7 @@ def create_study(payload: StudyIn):
 def update_study(study_id: int, payload: StudyIn):
     conn = get_conn()
     validate_study_windows(payload)
+    validate_additional_daily_surveys(payload)
     participant = conn.execute("SELECT id FROM participants WHERE id = %s", (payload.participant_id,)).fetchone()
     if not participant:
         conn.close()
@@ -642,7 +740,7 @@ def update_study(study_id: int, payload: StudyIn):
     updated = conn.execute(
         """
         UPDATE studies
-            SET participant_id = %s, comments = %s, start_date = %s, end_date = %s, prompts_per_day = %s, windows_json = %s
+            SET participant_id = %s, comments = %s, start_date = %s, end_date = %s, prompts_per_day = %s, windows_json = %s, additional_surveys_json = %s
             WHERE id = %s
             """,
         (
@@ -652,6 +750,12 @@ def update_study(study_id: int, payload: StudyIn):
             payload.end_date,
             payload.prompts_per_day,
             json.dumps([{"start": w.start, "end": w.end, "link": str(w.link)} for w in payload.windows]),
+            json.dumps(
+                [
+                    {"survey_type": s.survey_type, "time": s.time, "link": str(s.link)}
+                    for s in payload.additional_surveys
+                ]
+            ),
             study_id,
         ),
     )
@@ -663,6 +767,7 @@ def update_study(study_id: int, payload: StudyIn):
     log_event("study_updated", f"id={study_id}")
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
+    result["additional_surveys"] = json.loads(result.pop("additional_surveys_json") or "[]")
     conn = get_conn()
     study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = %s", (study_id,)).fetchone()
     if study_for_schedule:

@@ -145,6 +145,46 @@ label {
   font-weight: 600;
 }
 
+.daily-surveys {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.daily-surveys h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.daily-survey-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1.6fr) minmax(120px, 140px) auto minmax(180px, 2fr);
+  align-items: center;
+}
+
+.daily-survey-row label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.daily-survey-url {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.daily-survey-row a {
+  color: #3b5ea7;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.daily-survey-row a[aria-disabled="true"] {
+  color: var(--muted);
+  pointer-events: none;
+  text-decoration: none;
+}
+
 .window-status {
   display: none;
 }
@@ -320,6 +360,24 @@ li {
   cursor: pointer;
 }
 
+.tag.tag-window {
+  border-color: #c5cde7;
+  background: #eef2ff;
+  color: #334a96;
+}
+
+.tag.tag-eod {
+  border-color: #9fc9b4;
+  background: #eaf7f0;
+  color: #2f6f4f;
+}
+
+.tag.tag-dbs {
+  border-color: #d8b28a;
+  background: #fff4e8;
+  color: #93591f;
+}
+
 .tag.time-sent {
   border-color: #9fc9b4;
   background: #eaf7f0;
@@ -428,5 +486,9 @@ li {
 @media (max-width: 900px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .daily-survey-row {
+    grid-template-columns: 1fr;
   }
 }
