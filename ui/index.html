@@ -85,11 +85,11 @@
     </div>
 
     <div id="studyModal" class="modal hidden" aria-hidden="true">
-      <div class="modal-card">
+      <div class="modal-card study-modal-card">
         <button id="closeStudyModalX" type="button" class="modal-x" aria-label="Close">x</button>
         <h3 id="studyModalTitle">Save Study</h3>
-        <form id="studyForm" class="stack">
-          <div class="row">
+        <form id="studyForm" class="stack study-form">
+          <div class="row study-meta-grid">
             <div class="field">
               <label for="studyParticipant">Participant</label>
               <select id="studyParticipant" required></select>
@@ -110,17 +110,17 @@
               <input id="promptsPerDay" type="hidden" value="4" />
             </div>
           </div>
-          <div class="field">
+          <div class="field study-comments-field">
             <label for="studyComments">Comments</label>
             <textarea id="studyComments" rows="3" placeholder="Comments"></textarea>
           </div>
-          <div class="window-list">
+          <div class="window-list study-window-list">
             <button type="button" class="window-badge" data-window="1"><strong>Window 1:</strong> 08:00 - 10:00 <span class="window-status"></span></button>
             <button type="button" class="window-badge" data-window="2"><strong>Window 2:</strong> 10:30 - 12:30 <span class="window-status"></span></button>
             <button type="button" class="window-badge" data-window="3"><strong>Window 3:</strong> 13:00 - 15:00 <span class="window-status"></span></button>
             <button type="button" class="window-badge" data-window="4"><strong>Window 4:</strong> 15:30 - 17:30 <span class="window-status"></span></button>
           </div>
-          <div class="daily-surveys">
+          <div class="daily-surveys study-daily-surveys">
             <h4>Additional Daily Surveys</h4>
             <div class="daily-survey-row">
               <label for="eodSurveyTime">End of Day Survey Time</label>
