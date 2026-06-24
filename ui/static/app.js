@@ -331,12 +331,14 @@ function isValidHttpUrl(value) {
 function setSurveyPreviewLink(anchorEl, url) {
   if (!anchorEl) return;
   if (!url) {
-    anchorEl.textContent = "Click to set link";
+    anchorEl.textContent = "Set link";
     anchorEl.href = "#";
+    anchorEl.removeAttribute("title");
     return;
   }
-  anchorEl.textContent = url;
+  anchorEl.textContent = "Edit link";
   anchorEl.href = url;
+  anchorEl.title = url;
 }
 
 function refreshAdditionalSurveyPreviewLinks() {
@@ -349,7 +351,7 @@ function openAdditionalSurveyLinkEditor(surveyType) {
   activeWindow = null;
   activeAdditionalSurveyType = surveyType;
   const title = surveyType === "end_of_day" ? "Set Link for EOD Survey" : "Set Link for DBS Survey";
-  openLinkModal(title, getAdditionalSurveyRawLink(surveyType), false);
+  openLinkModal(title, getAdditionalSurveyPreviewLink(surveyType), false);
 }
 
 function escapeCsv(value) {
