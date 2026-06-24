@@ -150,6 +150,7 @@ function closeSurveyTemplateModal() {
 
 function closeStudyModal() {
   studyModal.classList.add("hidden");
+  clearPendingLinkSelection();
 }
 
 function updateStudyLinkButtonStates() {
@@ -161,6 +162,28 @@ function updateStudyLinkButtonStates() {
   });
   openEodLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.end_of_day));
   openDbsLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.dry_blood_spot));
+}
+
+function clearPendingLinkSelection() {
+  windowBadges.forEach((btn) => btn.classList.remove("pending"));
+  openEodLinkBtn.classList.remove("pending");
+  openDbsLinkBtn.classList.remove("pending");
+}
+
+function setPendingLinkSelection() {
+  clearPendingLinkSelection();
+  if (activeWindow) {
+    const activeBadge = windowBadges.find((btn) => Number(btn.dataset.window) === activeWindow);
+    activeBadge?.classList.add("pending");
+    return;
+  }
+  if (activeAdditionalSurveyType === "end_of_day") {
+    openEodLinkBtn.classList.add("pending");
+    return;
+  }
+  if (activeAdditionalSurveyType === "dry_blood_spot") {
+    openDbsLinkBtn.classList.add("pending");
+  }
 }
 
 function renderWindowSchedule(scheduleItems = []) {
@@ -202,6 +225,7 @@ function openLinkModal(title, value, readonly = false, scheduleItems = []) {
 
 function closeLinkModal() {
   linkModal.classList.add("hidden");
+  clearPendingLinkSelection();
   activeWindow = null;
   activeAdditionalSurveyType = "";
 }
@@ -345,6 +369,7 @@ function openAdditionalSurveyLinkEditor(surveyType) {
   if (authRequired) return;
   activeWindow = null;
   activeAdditionalSurveyType = surveyType;
+  setPendingLinkSelection();
   const title = surveyType === "end_of_day" ? "Set Link for EOD Survey" : "Set Link for DBS Survey";
   openLinkModal(title, getAdditionalSurveyPreviewLink(surveyType), false);
 }
@@ -407,6 +432,8 @@ function getDefaultStudyDates() {
 windowBadges.forEach((btn) => {
   btn.addEventListener("click", () => {
     activeWindow = Number(btn.dataset.window);
+    activeAdditionalSurveyType = "";
+    setPendingLinkSelection();
     openLinkModal(`Set Link for Window ${activeWindow}`, getWindowPreviewLink(activeWindow), false);
     windowLinkInput.dataset.rawValue = getWindowRawLink(activeWindow);
   });
@@ -515,12 +542,16 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
   }
   if (activeAdditionalSurveyType) {
     additionalSurveyLinks[activeAdditionalSurveyType] = stripPidFromUrl(value);
+    savedAdditionalSurveyStates[activeAdditionalSurveyType] = true;
+    updateStudyLinkButtonStates();
     refreshAdditionalSurveyPreviewLinks();
     closeLinkModal();
     return;
   }
   if (!activeWindow) return;
   windowLinks[activeWindow] = stripPidFromUrl(value);
+  savedWindowLinkStates[activeWindow] = true;
+  updateStudyLinkButtonStates();
   closeLinkModal();
 });
 
@@ -756,12 +787,10 @@ async function loadStudies() {
       dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
       additionalSurveyLinks.end_of_day = stripPidFromUrl(eodSurvey?.link || "");
       additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
+      clearSavedStudyLinkStates();
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
-        savedWindowLinkStates[i] = Boolean(study.windows?.[i - 1]?.link);
       }
-      savedAdditionalSurveyStates.end_of_day = Boolean(eodSurvey?.link);
-      savedAdditionalSurveyStates.dry_blood_spot = Boolean(dbsSurvey?.link);
       refreshStudyWindowLabels(document.getElementById("studyWakeTime").value || "08:00");
       updateStudyLinkButtonStates();
       refreshAdditionalSurveyPreviewLinks();
@@ -921,12 +950,6 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     openMessageModal("Unable To Save Study", "Each participant can have only one study.");
     return;
   }
-  for (let i = 1; i <= 4; i += 1) {
-    savedWindowLinkStates[i] = Boolean(windowLinks[i]);
-  }
-  savedAdditionalSurveyStates.end_of_day = Boolean(payload.additional_surveys[0].link);
-  savedAdditionalSurveyStates.dry_blood_spot = Boolean(payload.additional_surveys[1].link);
-  updateStudyLinkButtonStates();
   editingStudy = null;
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";

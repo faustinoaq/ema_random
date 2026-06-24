@@ -404,6 +404,8 @@ li {
   display: grid;
   place-items: center;
   padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 1000;
 }
 
@@ -419,17 +421,22 @@ li {
   position: relative;
   width: 100%;
   max-width: 520px;
+  max-height: calc(100vh - 32px);
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px;
   display: grid;
   gap: 10px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .study-modal-card {
-  max-height: none;
-  overflow: visible;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
 }
 
@@ -464,10 +471,21 @@ li {
   border-color: var(--border);
 }
 
+.study-window-list .window-badge.pending {
+  border-color: #95b3db;
+  box-shadow: 0 0 0 2px rgba(149, 179, 219, 0.25);
+}
+
 #openEodLinkBtn,
 #openDbsLinkBtn {
   background: #fff;
   border-color: var(--border);
+}
+
+#openEodLinkBtn.pending,
+#openDbsLinkBtn.pending {
+  border-color: #95b3db;
+  box-shadow: 0 0 0 2px rgba(149, 179, 219, 0.25);
 }
 
 #openEodLinkBtn.filled,
