@@ -860,29 +860,95 @@ function exportStudiesCsv() {
     openMessageModal("No Data", "There are no studies to export.");
     return;
   }
+
+  const longRows = [];
+
+  studiesCache.forEach((row) => {
+    const participantId = row.participant_code || row.participant_id || "";
+    const comments = row.comments || "";
+    const wakingTime = row.windows?.[0]?.start || "";
+
+    const windowRangeByIndex = {};
+    (row.windows || []).forEach((window, idx) => {
+      const windowIndex = String(idx + 1);
+      windowRangeByIndex[windowIndex] = `${window.start || ""}-${window.end || ""}`;
+    });
+
+    const dailyWindowTimeByIndex = {};
+    const windowSchedules = row.window_schedules || {};
+    Object.keys(windowSchedules).forEach((windowIndex) => {
+      const byDate = {};
+      (windowSchedules[windowIndex] || []).forEach((item) => {
+        if (!item?.date || !item?.time) return;
+        if (!byDate[item.date]) {
+          byDate[item.date] = item.time;
+        }
+      });
+      dailyWindowTimeByIndex[windowIndex] = byDate;
+    });
+
+    const additionalSurveyTimes = {};
+    (row.additional_surveys || []).forEach((survey) => {
+      if (survey?.survey_type && survey?.time) {
+        additionalSurveyTimes[survey.survey_type] = survey.time;
+      }
+    });
+
+    const dailyAdditionalTimes = { end_of_day: {}, dry_blood_spot: {} };
+    const additionalSchedules = row.additional_schedules || {};
+    ["end_of_day", "dry_blood_spot"].forEach((surveyType) => {
+      (additionalSchedules[surveyType] || []).forEach((item) => {
+        if (!item?.date || !item?.time) return;
+        if (!dailyAdditionalTimes[surveyType][item.date]) {
+          dailyAdditionalTimes[surveyType][item.date] = item.time;
+        }
+      });
+    });
+
+    const start = new Date(`${row.start_date}T00:00:00`);
+    const end = new Date(`${row.end_date}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return;
+    }
+
+    for (let d = new Date(start), dayNumber = 1; d <= end; d.setDate(d.getDate() + 1), dayNumber += 1) {
+      const studyDate = toYmd(d);
+      longRows.push([
+        participantId,
+        studyDate,
+        dayNumber,
+        wakingTime,
+        dailyWindowTimeByIndex["1"]?.[studyDate] || windowRangeByIndex["1"] || "",
+        dailyWindowTimeByIndex["2"]?.[studyDate] || windowRangeByIndex["2"] || "",
+        dailyWindowTimeByIndex["3"]?.[studyDate] || windowRangeByIndex["3"] || "",
+        dailyWindowTimeByIndex["4"]?.[studyDate] || windowRangeByIndex["4"] || "",
+        dailyAdditionalTimes.end_of_day[studyDate] || additionalSurveyTimes.end_of_day || "",
+        dailyAdditionalTimes.dry_blood_spot[studyDate] || additionalSurveyTimes.dry_blood_spot || "",
+        comments,
+      ]);
+    }
+  });
+
+  if (!longRows.length) {
+    openMessageModal("No Data", "There are no valid study dates to export.");
+    return;
+  }
+
   downloadCsv("studies.csv", [
     [
-      "id",
-      "participant_id",
-      "participant_code",
-      "start_date",
-      "end_date",
-      "prompts_per_day",
-      "comments",
-      "windows_json",
-      "additional_surveys_json",
+      "Participant_ID",
+      "Study_Date",
+      "Day_Number",
+      "Waking_Time",
+      "Window_1_Time",
+      "Window_2_Time",
+      "Window_3_Time",
+      "Window_4_Time",
+      "EOD_Survey_Time",
+      "DBS_Survey_Time",
+      "Comments",
     ],
-    ...studiesCache.map((row) => [
-      row.id,
-      row.participant_id,
-      row.participant_code || "",
-      row.start_date,
-      row.end_date,
-      row.prompts_per_day,
-      row.comments || "",
-      JSON.stringify(row.windows || []),
-      JSON.stringify(row.additional_surveys || []),
-    ]),
+    ...longRows,
   ]);
 }
 
