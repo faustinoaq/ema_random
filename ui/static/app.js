@@ -453,6 +453,11 @@ openDbsLinkBtn.addEventListener("click", () => {
   openLinkModal("Set Link for DBS Survey", getAdditionalSurveyRawLink("dry_blood_spot"), false);
 });
 
+document.getElementById("closeParticipantModalX").addEventListener("click", closeParticipantModal);
+document.getElementById("closeStudyModalX").addEventListener("click", closeStudyModal);
+document.getElementById("closeWindowLinkModalX").addEventListener("click", closeLinkModal);
+document.getElementById("closeConfirmModalX").addEventListener("click", closeConfirmModal);
+document.getElementById("cancelConfirmBtn").addEventListener("click", closeConfirmModal);
 document.getElementById("closeSurveyTemplateModalX").addEventListener("click", closeSurveyTemplateModal);
 document.getElementById("closeSurveyTemplatesBtn").addEventListener("click", closeSurveyTemplateModal);
 document.getElementById("openSurveyTemplatesBtn").addEventListener("click", async () => {
