@@ -38,15 +38,52 @@ function computeStudyWindowsFromWake(wakeTime) {
   return windows;
 }
 
-function refreshStudyWindowLabels(wakeTime = document.getElementById("studyWakeTime")?.value || "08:00") {
+function playRangeUpdatedAnimation(el) {
+  if (!el) return;
+  el.classList.remove("range-updated");
+  void el.offsetWidth;
+  el.classList.add("range-updated");
+}
+
+function refreshStudyWindowLabels(
+  wakeTime = document.getElementById("studyWakeTime")?.value || "08:00",
+  animate = false
+) {
   const windows = computeStudyWindowsFromWake(wakeTime);
   for (let i = 1; i <= 4; i += 1) {
     windowTimes[i] = { start: windows[i - 1].start, end: windows[i - 1].end };
     const btn = document.querySelector(`#studyModal .window-badge[data-window="${i}"]`);
-    if (btn) {
-      btn.innerHTML = `<strong>Window ${i}:</strong> ${windowTimes[i].start} - ${windowTimes[i].end} <span class="window-status"></span>`;
+    if (!btn) continue;
+    const nextRange = `${windowTimes[i].start}-${windowTimes[i].end}`;
+    const prevRange = btn.dataset.rangeLabel || "";
+    btn.innerHTML = `<strong>Window ${i}:</strong> ${windowTimes[i].start} - ${windowTimes[i].end} <span class="window-status"></span>`;
+    btn.dataset.rangeLabel = nextRange;
+    if (animate && prevRange && prevRange !== nextRange) {
+      playRangeUpdatedAnimation(btn);
     }
   }
+}
+
+function updateVisibleStudyTableRanges(wakeTime, animate = false) {
+  if (!studyModal || studyModal.classList.contains("hidden")) return;
+  if (!editingStudy) return;
+  const studyRows = document.getElementById("studyRows");
+  if (!studyRows) return;
+  const targetRow = studyRows.querySelector(`tr[data-study-id="${editingStudy}"]`);
+  if (!targetRow) return;
+  const windows = computeStudyWindowsFromWake(wakeTime);
+  const tags = targetRow.querySelectorAll(".tag-window");
+  tags.forEach((tag) => {
+    const idx = Number(tag.dataset.windowIndex || "0");
+    if (!idx || !windows[idx - 1]) return;
+    const range = windows[idx - 1];
+    const nextLabel = `W${idx} ${range.start}-${range.end}`;
+    const changed = tag.textContent !== nextLabel;
+    tag.textContent = nextLabel;
+    if (animate && changed) {
+      playRangeUpdatedAnimation(tag);
+    }
+  });
 }
 let editingParticipant = null;
 let editingParticipantStatus = "active";
@@ -99,6 +136,7 @@ const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn")
 const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateModalX");
 const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
 const closeSurveyTemplatesBtn = document.getElementById("closeSurveyTemplatesBtn");
+const studyWakeTimeInput = document.getElementById("studyWakeTime");
 let smsTargetParticipantId = null;
 let smsTargetParticipantLabel = "";
 let surveyTemplateDefaults = {
@@ -590,6 +628,18 @@ studyParticipantSelect.addEventListener("change", () => {
 
 studyParticipantSelect.addEventListener("change", refreshAdditionalSurveyPreviewLinks);
 
+studyWakeTimeInput?.addEventListener("input", () => {
+  const wakeTime = studyWakeTimeInput.value || "08:00";
+  refreshStudyWindowLabels(wakeTime, true);
+  updateVisibleStudyTableRanges(wakeTime, true);
+});
+
+studyWakeTimeInput?.addEventListener("change", () => {
+  const wakeTime = studyWakeTimeInput.value || "08:00";
+  refreshStudyWindowLabels(wakeTime, true);
+  updateVisibleStudyTableRanges(wakeTime, true);
+});
+
 document.getElementById("smsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!smsTargetParticipantId || sendSmsBtn.disabled) return;
@@ -744,10 +794,12 @@ async function loadStudies() {
   }
   body.innerHTML = rows
     .map((r) => {
-      const windows = (r.windows || [])
+      const tableWakeTime = r.windows?.[0]?.start || "08:00";
+      const computedWindows = computeStudyWindowsFromWake(tableWakeTime);
+      const windows = computedWindows
         .map((w, i) => {
           const schedule = r.window_schedules?.[String(i + 1)] || [];
-          return `<button type="button" class="tag button-tag tag-window" data-link="${encodeAttr(w.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
+          return `<button type="button" class="tag button-tag tag-window" data-window-index="${i + 1}" data-link="${encodeAttr(r.windows?.[i]?.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
         })
         .join("");
       const additionalTagConfig = {
@@ -763,7 +815,7 @@ async function loadStudies() {
           return `<button type="button" class="tag button-tag ${cfg.className}" data-link="${encodeAttr(survey.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="${cfg.label}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">${cfg.short} ${timeLabel}</button>`;
         })
         .join("");
-      return `<tr>
+      return `<tr data-study-id="${r.id}">
         <td>${r.participant_code || `#${r.participant_id || "-"}`}</td>
         <td>${r.start_date} to ${r.end_date}</td>
         <td>${r.comments || "-"}</td>
