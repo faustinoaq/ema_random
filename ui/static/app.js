@@ -755,18 +755,28 @@ async function loadParticipants() {
     });
   });
   body.querySelectorAll(".delete-participant").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = Number(btn.dataset.id);
+      if (!studiesCache.length) {
+        try {
+          studiesCache = await getJSON("/api/studies");
+        } catch {
+          studiesCache = [];
+        }
+      }
+      const participantStudies = studiesCache.filter((study) => Number(study.participant_id) === id);
       const today = toYmd(new Date());
-      const hasActiveStudy = studiesCache.some(
+      const hasActiveStudy = participantStudies.some(
         (study) =>
-          Number(study.participant_id) === id &&
           study.start_date <= today &&
           study.end_date >= today
       );
+      const hasAnyStudy = participantStudies.length > 0;
       const confirmText = hasActiveStudy
         ? "⚠ This participant has an active study. If you remove this participant, the active study will also be removed. Continue?"
-        : "This participant will be removed. Continue?";
+        : hasAnyStudy
+          ? "⚠ This participant has a linked study. If you remove this participant, the linked study will also be removed. Continue?"
+          : "This participant will be removed. Continue?";
       openConfirmModal("Remove Participant", confirmText, async () => {
         await getJSON(`/api/participants/${id}`, { method: "DELETE" });
         if (editingParticipant === id) {
