@@ -798,17 +798,23 @@ def list_logs():
     return [dict(r) for r in rows]
 
 
-@app.post("/api/scheduler/generate")
-def manual_generate():
+@app.post("/api/scheduler/generate/{participant_id}")
+def manual_generate(participant_id: int):
     conn = get_conn()
-    studies = conn.execute("SELECT * FROM studies ORDER BY id DESC").fetchall()
+    studies = conn.execute(
+        "SELECT * FROM studies WHERE participant_id = %s ORDER BY id DESC",
+        (participant_id,),
+    ).fetchall()
+    if not studies:
+        conn.close()
+        raise HTTPException(status_code=404, detail="No study found for this participant")
     total = 0
     for study in studies:
         total += regenerate_study_schedule(conn, study, overwrite_unsent=True)
     conn.commit()
     conn.close()
-    log_event("schedule_generated", f"manual prompts_generated={total}")
-    return {"ok": True, "generated": total}
+    log_event("schedule_generated", f"manual participant_id={participant_id} prompts_generated={total}")
+    return {"ok": True, "participant_id": participant_id, "generated": total}
 
 
 @app.get("/api/dashboard")

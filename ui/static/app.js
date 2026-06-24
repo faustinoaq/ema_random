@@ -748,6 +748,7 @@ async function loadStudies() {
         <td><div class="stacked-tags">${windows}${additionalTags}</div></td>
         <td>
           <button type="button" class="secondary action edit-study" data-id="${r.id}">Edit</button>
+          <button type="button" class="secondary action regenerate-study" data-participant-id="${r.participant_id}" data-participant-code="${encodeAttr(r.participant_code || `#${r.participant_id || "-"}`)}">Regenerate Times</button>
           <button type="button" class="secondary action delete-study" data-id="${r.id}">Remove</button>
         </td>
       </tr>`;
@@ -797,6 +798,22 @@ async function loadStudies() {
       document.getElementById("studyModalTitle").textContent = "Edit Study";
       studySubmitBtn.textContent = "Save";
       openStudyModal();
+    });
+  });
+  body.querySelectorAll(".regenerate-study").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const participantId = Number(btn.dataset.participantId);
+      const participantCode = decodeURIComponent(btn.dataset.participantCode || "participant");
+      if (!participantId) return;
+      openConfirmModal(
+        "Regenerate Random Times",
+        `This will overwrite current unsent random times for ${participantCode}. Continue?`,
+        async () => {
+          await getJSON(`/api/scheduler/generate/${participantId}`, { method: "POST" });
+          await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
+        },
+        "Generate"
+      );
     });
   });
   body.querySelectorAll(".delete-study").forEach((btn) => {
@@ -955,18 +972,6 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
   studySubmitBtn.textContent = "Save";
   closeStudyModal();
   await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
-});
-
-document.getElementById("generateBtn").addEventListener("click", async () => {
-  openConfirmModal(
-    "Regenerate Random Times",
-    "This will overwrite current unsent random times for today. Continue?",
-    async () => {
-      await getJSON("/api/scheduler/generate", { method: "POST" });
-      await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
-    },
-    "Generate"
-  );
 });
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {
