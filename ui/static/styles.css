@@ -428,26 +428,27 @@ li {
 }
 
 .study-modal-card {
-  max-height: calc(100vh - 32px);
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
+  padding: 24px;
 }
 
 .study-form {
-  overflow-y: auto;
+  overflow: visible;
   min-height: 0;
-  padding-right: 2px;
-  gap: 8px;
+  padding-right: 0;
+  gap: 16px;
 }
 
 .study-meta-grid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .study-meta-grid .field {
-  min-width: 0;
-  flex: initial;
+  min-width: 180px;
+  flex: 1 1 180px;
 }
 
 .study-comments-field textarea {
@@ -455,11 +456,28 @@ li {
 }
 
 .study-window-list {
-  gap: 6px;
+  gap: 8px;
+}
+
+.study-window-list .window-badge {
+  background: #fff;
+  border-color: var(--border);
+}
+
+#openEodLinkBtn,
+#openDbsLinkBtn {
+  background: #fff;
+  border-color: var(--border);
+}
+
+#openEodLinkBtn.filled,
+#openDbsLinkBtn.filled {
+  border-color: #9fc9b4;
+  background: #f3fbf7;
 }
 
 .study-daily-surveys {
-  gap: 6px;
+  gap: 8px;
 }
 
 .study-daily-surveys h4 {
@@ -532,8 +550,15 @@ li {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .study-meta-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #studyModal {
+    place-items: start center;
+    overflow-y: auto;
+    padding-block: 20px;
+  }
+
+  .study-meta-grid .field {
+    min-width: 140px;
+    flex: 1 1 140px;
   }
 
   .daily-survey-row {

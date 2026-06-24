@@ -9,6 +9,7 @@ async function getJSON(url, options) {
 }
 
 const windowLinks = { 1: "", 2: "", 3: "", 4: "" };
+const savedWindowLinkStates = { 1: false, 2: false, 3: false, 4: false };
 const windowTimes = {
   1: { start: "08:00", end: "10:00" },
   2: { start: "10:30", end: "12:30" },
@@ -16,6 +17,7 @@ const windowTimes = {
   4: { start: "15:30", end: "17:30" },
 };
 const additionalSurveyLinks = { end_of_day: "", dry_blood_spot: "" };
+const savedAdditionalSurveyStates = { end_of_day: false, dry_blood_spot: false };
 let activeWindow = null;
 let activeAdditionalSurveyType = "";
 
@@ -127,7 +129,14 @@ function applySurveyTemplateDefaultsToStudy() {
   windowLinks[2] = surveyTemplateDefaults.window_2;
   windowLinks[3] = surveyTemplateDefaults.window_3;
   windowLinks[4] = surveyTemplateDefaults.window_4;
-  updateWindowBadgeStates();
+}
+
+function clearSavedStudyLinkStates() {
+  for (let i = 1; i <= 4; i += 1) {
+    savedWindowLinkStates[i] = false;
+  }
+  savedAdditionalSurveyStates.end_of_day = false;
+  savedAdditionalSurveyStates.dry_blood_spot = false;
 }
 
 function openSurveyTemplateModal() {
@@ -143,13 +152,15 @@ function closeStudyModal() {
   studyModal.classList.add("hidden");
 }
 
-function updateWindowBadgeStates() {
+function updateStudyLinkButtonStates() {
   windowBadges.forEach((btn) => {
     const windowNumber = Number(btn.dataset.window);
-    const hasLink = Boolean(windowLinks[windowNumber]);
-    btn.classList.toggle("filled", hasLink);
-    btn.classList.toggle("missing", !hasLink);
+    const isSaved = Boolean(savedWindowLinkStates[windowNumber]);
+    btn.classList.toggle("filled", isSaved);
+    btn.classList.remove("missing");
   });
+  openEodLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.end_of_day));
+  openDbsLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.dry_blood_spot));
 }
 
 function renderWindowSchedule(scheduleItems = []) {
@@ -425,6 +436,8 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   additionalSurveyLinks.end_of_day = "";
   additionalSurveyLinks.dry_blood_spot = "";
   applySurveyTemplateDefaultsToStudy();
+  clearSavedStudyLinkStates();
+  updateStudyLinkButtonStates();
   refreshAdditionalSurveyPreviewLinks();
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
@@ -508,7 +521,6 @@ document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
   }
   if (!activeWindow) return;
   windowLinks[activeWindow] = stripPidFromUrl(value);
-  updateWindowBadgeStates();
   closeLinkModal();
 });
 
@@ -746,9 +758,12 @@ async function loadStudies() {
       additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
+        savedWindowLinkStates[i] = Boolean(study.windows?.[i - 1]?.link);
       }
+      savedAdditionalSurveyStates.end_of_day = Boolean(eodSurvey?.link);
+      savedAdditionalSurveyStates.dry_blood_spot = Boolean(dbsSurvey?.link);
       refreshStudyWindowLabels(document.getElementById("studyWakeTime").value || "08:00");
-      updateWindowBadgeStates();
+      updateStudyLinkButtonStates();
       refreshAdditionalSurveyPreviewLinks();
       document.getElementById("studyModalTitle").textContent = "Edit Study";
       studySubmitBtn.textContent = "Save";
@@ -765,7 +780,8 @@ async function loadStudies() {
           document.getElementById("studyForm").reset();
           document.getElementById("promptsPerDay").value = 4;
           for (let i = 1; i <= 4; i += 1) windowLinks[i] = "";
-          updateWindowBadgeStates();
+          clearSavedStudyLinkStates();
+          updateStudyLinkButtonStates();
           document.getElementById("studyModalTitle").textContent = "Save Study";
           studySubmitBtn.textContent = "Save";
           closeStudyModal();
@@ -905,6 +921,12 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     openMessageModal("Unable To Save Study", "Each participant can have only one study.");
     return;
   }
+  for (let i = 1; i <= 4; i += 1) {
+    savedWindowLinkStates[i] = Boolean(windowLinks[i]);
+  }
+  savedAdditionalSurveyStates.end_of_day = Boolean(payload.additional_surveys[0].link);
+  savedAdditionalSurveyStates.dry_blood_spot = Boolean(payload.additional_surveys[1].link);
+  updateStudyLinkButtonStates();
   editingStudy = null;
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
@@ -945,5 +967,5 @@ async function bootstrap() {
 }
 
 bootstrap();
-updateWindowBadgeStates();
+updateStudyLinkButtonStates();
 refreshAdditionalSurveyPreviewLinks();
