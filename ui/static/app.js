@@ -331,19 +331,25 @@ function isValidHttpUrl(value) {
 function setSurveyPreviewLink(anchorEl, url) {
   if (!anchorEl) return;
   if (!url) {
-    anchorEl.textContent = "-";
+    anchorEl.textContent = "Click to set link";
     anchorEl.href = "#";
-    anchorEl.setAttribute("aria-disabled", "true");
     return;
   }
   anchorEl.textContent = url;
   anchorEl.href = url;
-  anchorEl.removeAttribute("aria-disabled");
 }
 
 function refreshAdditionalSurveyPreviewLinks() {
   setSurveyPreviewLink(eodSurveyUrlPreview, getAdditionalSurveyPreviewLink("end_of_day"));
   setSurveyPreviewLink(dbsSurveyUrlPreview, getAdditionalSurveyPreviewLink("dry_blood_spot"));
+}
+
+function openAdditionalSurveyLinkEditor(surveyType) {
+  if (authRequired) return;
+  activeWindow = null;
+  activeAdditionalSurveyType = surveyType;
+  const title = surveyType === "end_of_day" ? "Set Link for EOD Survey" : "Set Link for DBS Survey";
+  openLinkModal(title, getAdditionalSurveyRawLink(surveyType), false);
 }
 
 function escapeCsv(value) {
@@ -440,17 +446,21 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
 });
 
 openEodLinkBtn.addEventListener("click", () => {
-  if (authRequired) return;
-  activeWindow = null;
-  activeAdditionalSurveyType = "end_of_day";
-  openLinkModal("Set Link for EOD Survey", getAdditionalSurveyRawLink("end_of_day"), false);
+  openAdditionalSurveyLinkEditor("end_of_day");
 });
 
 openDbsLinkBtn.addEventListener("click", () => {
-  if (authRequired) return;
-  activeWindow = null;
-  activeAdditionalSurveyType = "dry_blood_spot";
-  openLinkModal("Set Link for DBS Survey", getAdditionalSurveyRawLink("dry_blood_spot"), false);
+  openAdditionalSurveyLinkEditor("dry_blood_spot");
+});
+
+eodSurveyUrlPreview.addEventListener("click", (event) => {
+  event.preventDefault();
+  openAdditionalSurveyLinkEditor("end_of_day");
+});
+
+dbsSurveyUrlPreview.addEventListener("click", (event) => {
+  event.preventDefault();
+  openAdditionalSurveyLinkEditor("dry_blood_spot");
 });
 
 document.getElementById("closeParticipantModalX").addEventListener("click", closeParticipantModal);
