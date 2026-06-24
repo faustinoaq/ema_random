@@ -59,6 +59,14 @@ uvicorn server.main:app --reload
 
 Open: `http://127.0.0.1:8000`
 
+Public pages for registration/compliance:
+- `http://127.0.0.1:8000/` (public landing page)
+- `http://127.0.0.1:8000/privacy-policy`
+- `http://127.0.0.1:8000/terms-and-conditions`
+
+Admin UI:
+- `http://127.0.0.1:8000/admin`
+
 ## OpenShift
 
 Set the launcher to:

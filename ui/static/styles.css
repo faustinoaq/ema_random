@@ -22,10 +22,134 @@ body {
   background: var(--bg);
 }
 
+.landing-body {
+  background:
+    radial-gradient(circle at 10% -20%, rgba(216, 209, 232, 0.35), transparent 55%),
+    radial-gradient(circle at 90% 0%, rgba(206, 228, 219, 0.28), transparent 48%),
+    var(--bg);
+}
+
 .container {
   max-width: 980px;
   margin: 0 auto;
   padding: 20px;
+}
+
+.landing-shell,
+.legal-shell {
+  max-width: 1040px;
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+
+.landing-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.landing-subtitle {
+  margin: 0;
+  max-width: 68ch;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.landing-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, #b9afcf);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #2f2a3c;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.landing-login-btn:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+
+.landing-section {
+  display: grid;
+  gap: 10px;
+}
+
+.landing-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.landing-item h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.landing-item p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.legal-section {
+  display: grid;
+  gap: 8px;
+}
+
+.legal-section p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.legal-list {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.legal-list li {
+  border-top: 0;
+  padding: 2px 0;
+  line-height: 1.45;
+}
+
+.landing-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.landing-footer a {
+  color: #3b5ea7;
+  text-decoration: none;
+}
+
+.landing-footer a:hover {
+  text-decoration: underline;
 }
 
 h1 {
@@ -616,6 +740,15 @@ li {
 @media (max-width: 900px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .landing-grid {
+    grid-template-columns: 1fr;
   }
 
   #studyModal {

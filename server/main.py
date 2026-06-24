@@ -849,7 +849,22 @@ def dashboard():
 
 @app.get("/")
 def root():
+    return FileResponse(STATIC_DIR / "landing.html")
+
+
+@app.get("/admin")
+def admin_root():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/privacy-policy")
+def privacy_policy_page():
+    return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/terms-and-conditions")
+def terms_and_conditions_page():
+    return FileResponse(STATIC_DIR / "terms.html")
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR / "static"), name="static")
