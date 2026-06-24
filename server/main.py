@@ -26,7 +26,7 @@ from pydantic import BaseModel, HttpUrl
 from .db import get_conn, init_db
 from .schemas import ParticipantIn, StudyIn
 
-app = FastAPI(title="EMA Study Admin", version="0.1.0")
+app = FastAPI(title="EMA Admin", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
