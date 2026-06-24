@@ -581,11 +581,17 @@ def update_participant(participant_id: int, payload: ParticipantIn):
 @app.delete("/api/participants/{participant_id}")
 def delete_participant(participant_id: int):
     conn = get_conn()
-    deleted = conn.execute("DELETE FROM participants WHERE id = %s", (participant_id,))
+    participant = conn.execute("SELECT id FROM participants WHERE id = %s", (participant_id,)).fetchone()
+    if not participant:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Participant not found")
+
+    # Remove dependent rows first to satisfy FK constraints.
+    conn.execute("DELETE FROM prompts WHERE participant_id = %s", (participant_id,))
+    conn.execute("DELETE FROM studies WHERE participant_id = %s", (participant_id,))
+    conn.execute("DELETE FROM participants WHERE id = %s", (participant_id,))
     conn.commit()
     conn.close()
-    if deleted.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Participant not found")
     log_event("participant_deleted", f"id={participant_id}")
     return {"ok": True}
 

@@ -590,8 +590,13 @@ exportParticipantsCsvBtn.addEventListener("click", exportParticipantsCsv);
 exportStudiesCsvBtn.addEventListener("click", exportStudiesCsv);
 document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
   if (!confirmDeleteAction) return;
-  await confirmDeleteAction();
-  closeConfirmModal();
+  try {
+    await confirmDeleteAction();
+    closeConfirmModal();
+  } catch (err) {
+    const message = err?.message || "Unable to complete this action.";
+    openMessageModal("Action Failed", message);
+  }
 });
 document.getElementById("closeWindowLinkBtn").addEventListener("click", closeLinkModal);
 document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
