@@ -757,7 +757,17 @@ async function loadParticipants() {
   body.querySelectorAll(".delete-participant").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = Number(btn.dataset.id);
-      openConfirmModal("Remove Participant", "This participant will be removed. Continue?", async () => {
+      const today = toYmd(new Date());
+      const hasActiveStudy = studiesCache.some(
+        (study) =>
+          Number(study.participant_id) === id &&
+          study.start_date <= today &&
+          study.end_date >= today
+      );
+      const confirmText = hasActiveStudy
+        ? "⚠ This participant has an active study. If you remove this participant, the active study will also be removed. Continue?"
+        : "This participant will be removed. Continue?";
+      openConfirmModal("Remove Participant", confirmText, async () => {
         await getJSON(`/api/participants/${id}`, { method: "DELETE" });
         if (editingParticipant === id) {
           editingParticipant = null;
