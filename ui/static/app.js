@@ -91,8 +91,6 @@ const templateEod = document.getElementById("templateEod");
 const templateDbs = document.getElementById("templateDbs");
 const eodSurveyTimeInput = document.getElementById("eodSurveyTime");
 const dbsSurveyTimeInput = document.getElementById("dbsSurveyTime");
-const eodSurveyUrlPreview = document.getElementById("eodSurveyUrlPreview");
-const dbsSurveyUrlPreview = document.getElementById("dbsSurveyUrlPreview");
 const openEodLinkBtn = document.getElementById("openEodLinkBtn");
 const openDbsLinkBtn = document.getElementById("openDbsLinkBtn");
 const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
@@ -328,22 +326,8 @@ function isValidHttpUrl(value) {
   }
 }
 
-function setSurveyPreviewLink(anchorEl, url) {
-  if (!anchorEl) return;
-  if (!url) {
-    anchorEl.textContent = "Set link";
-    anchorEl.href = "#";
-    anchorEl.removeAttribute("title");
-    return;
-  }
-  anchorEl.textContent = "Edit link";
-  anchorEl.href = url;
-  anchorEl.title = url;
-}
-
 function refreshAdditionalSurveyPreviewLinks() {
-  setSurveyPreviewLink(eodSurveyUrlPreview, getAdditionalSurveyPreviewLink("end_of_day"));
-  setSurveyPreviewLink(dbsSurveyUrlPreview, getAdditionalSurveyPreviewLink("dry_blood_spot"));
+  // Additional survey links are edited through EOD/DBS buttons only.
 }
 
 function openAdditionalSurveyLinkEditor(surveyType) {
@@ -452,16 +436,6 @@ openEodLinkBtn.addEventListener("click", () => {
 });
 
 openDbsLinkBtn.addEventListener("click", () => {
-  openAdditionalSurveyLinkEditor("dry_blood_spot");
-});
-
-eodSurveyUrlPreview.addEventListener("click", (event) => {
-  event.preventDefault();
-  openAdditionalSurveyLinkEditor("end_of_day");
-});
-
-dbsSurveyUrlPreview.addEventListener("click", (event) => {
-  event.preventDefault();
   openAdditionalSurveyLinkEditor("dry_blood_spot");
 });
 

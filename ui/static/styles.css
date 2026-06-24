@@ -159,7 +159,7 @@ label {
 .daily-survey-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(180px, 1.6fr) minmax(120px, 140px) auto auto minmax(180px, 2fr);
+  grid-template-columns: minmax(180px, 1.6fr) minmax(120px, 140px) auto;
   align-items: center;
 }
 
@@ -467,7 +467,7 @@ li {
 }
 
 .study-daily-surveys .daily-survey-row {
-  grid-template-columns: minmax(160px, 1.3fr) minmax(112px, 132px) auto minmax(160px, 1.8fr);
+  grid-template-columns: minmax(160px, 1.3fr) minmax(112px, 132px) auto;
   gap: 6px;
 }
 
