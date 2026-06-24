@@ -153,15 +153,37 @@ function closeStudyModal() {
   clearPendingLinkSelection();
 }
 
+function playJustFilledAnimation(el) {
+  if (!el) return;
+  el.classList.remove("just-filled");
+  void el.offsetWidth;
+  el.classList.add("just-filled");
+}
+
 function updateStudyLinkButtonStates() {
   windowBadges.forEach((btn) => {
     const windowNumber = Number(btn.dataset.window);
     const isSaved = Boolean(savedWindowLinkStates[windowNumber]);
+    const wasSaved = btn.classList.contains("filled");
     btn.classList.toggle("filled", isSaved);
     btn.classList.remove("missing");
+    if (isSaved && !wasSaved) {
+      playJustFilledAnimation(btn);
+    }
   });
-  openEodLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.end_of_day));
-  openDbsLinkBtn.classList.toggle("filled", Boolean(savedAdditionalSurveyStates.dry_blood_spot));
+  const wasEodSaved = openEodLinkBtn.classList.contains("filled");
+  const isEodSaved = Boolean(savedAdditionalSurveyStates.end_of_day);
+  openEodLinkBtn.classList.toggle("filled", isEodSaved);
+  if (isEodSaved && !wasEodSaved) {
+    playJustFilledAnimation(openEodLinkBtn);
+  }
+
+  const wasDbsSaved = openDbsLinkBtn.classList.contains("filled");
+  const isDbsSaved = Boolean(savedAdditionalSurveyStates.dry_blood_spot);
+  openDbsLinkBtn.classList.toggle("filled", isDbsSaved);
+  if (isDbsSaved && !wasDbsSaved) {
+    playJustFilledAnimation(openDbsLinkBtn);
+  }
 }
 
 function clearPendingLinkSelection() {

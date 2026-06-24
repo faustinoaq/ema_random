@@ -469,6 +469,12 @@ li {
 .study-window-list .window-badge {
   background: #fff;
   border-color: var(--border);
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+
+.study-window-list .window-badge.filled {
+  border-color: #9fc9b4;
+  background: #f3fbf7;
 }
 
 .study-window-list .window-badge.pending {
@@ -492,6 +498,27 @@ li {
 #openDbsLinkBtn.filled {
   border-color: #9fc9b4;
   background: #f3fbf7;
+}
+
+.study-window-list .window-badge.just-filled,
+#openEodLinkBtn.just-filled,
+#openDbsLinkBtn.just-filled {
+  animation: saved-link-pop 220ms ease-out;
+}
+
+@keyframes saved-link-pop {
+  0% {
+    transform: scale(0.98);
+    box-shadow: 0 0 0 0 rgba(159, 201, 180, 0.35);
+  }
+  70% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 5px rgba(159, 201, 180, 0.18);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  }
 }
 
 .study-daily-surveys {
