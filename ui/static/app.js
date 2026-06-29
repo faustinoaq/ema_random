@@ -9,6 +9,16 @@ async function getJSON(url, options) {
 }
 
 const windowLinks = { 1: "", 2: "", 3: "", 4: "" };
+const APP_TIME_ZONE = "America/New_York";
+const LOG_DATE_TIME_FORMATTER = new Intl.DateTimeFormat([], {
+  timeZone: APP_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+});
 const savedWindowLinkStates = { 1: false, 2: false, 3: false, 4: false };
 const windowTimes = {
   1: { start: "08:00", end: "10:00" },
@@ -255,11 +265,15 @@ function renderWindowSchedule(scheduleItems = []) {
   windowScheduleList.innerHTML = scheduleItems
     .map((item) => {
       if (!item?.time || !item?.date) return "<li>-</li>";
-      const [h, m] = item.time.split(":").map(Number);
-      const d = new Date(`${item.date}T00:00:00`);
-      d.setHours(h, m, 0, 0);
-      const dateLabel = d.toLocaleDateString([], { month: "short", day: "numeric" });
-      const timeLabel = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const [, month, day] = item.date.split("-").map(Number);
+      const [hours24, minutes] = item.time.split(":").map(Number);
+      const monthLabel = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+        Math.max(1, month) - 1
+      ];
+      const meridiem = hours24 >= 12 ? "PM" : "AM";
+      const hours12 = ((hours24 + 11) % 12) + 1;
+      const dateLabel = `${monthLabel} ${day}`;
+      const timeLabel = `${hours12}:${String(minutes).padStart(2, "0")} ${meridiem}`;
       const statusClass = item.sent ? "time-sent" : "time-pending";
       const statusText = item.sent ? "Sent" : "Pending";
       return `<li><span>${dateLabel}: ${timeLabel}</span> <span class="tag ${statusClass}">${statusText}</span></li>`;
@@ -805,7 +819,11 @@ async function loadLogs() {
   const list = document.getElementById("logs");
   list.innerHTML = rows
     .slice(0, 10)
-    .map((r) => `<li>${new Date(r.timestamp).toLocaleString()} ${r.event}: ${r.details}</li>`)
+    .map((r) => {
+      const timestamp = new Date(r.timestamp);
+      const formatted = Number.isNaN(timestamp.getTime()) ? String(r.timestamp || "") : LOG_DATE_TIME_FORMATTER.format(timestamp);
+      return `<li>${formatted} ET ${r.event}: ${r.details}</li>`;
+    })
     .join("");
 }
 

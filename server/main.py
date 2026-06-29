@@ -43,7 +43,7 @@ LOCAL_TZ = ZoneInfo(APP_TIMEZONE)
 os.environ.setdefault("TZ", APP_TIMEZONE)
 if hasattr(time_module, "tzset"):
     time_module.tzset()
-scheduler = BackgroundScheduler()
+scheduler = BackgroundScheduler(timezone=LOCAL_TZ)
 AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
 AUTH_PASSWORD_HASH = os.getenv("APP_AUTH_PASSWORD_HASH")
 AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "admin")
@@ -299,24 +299,24 @@ def send_sms_message(to_number: str, body: str) -> None:
 
 def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
     today = datetime.now(LOCAL_TZ).date().isoformat()
-    start_dt = datetime.fromisoformat(f"{today}T{start_hhmm}:00")
-    end_dt = datetime.fromisoformat(f"{today}T{end_hhmm}:00")
+    start_dt = datetime.fromisoformat(f"{today}T{start_hhmm}:00").replace(tzinfo=LOCAL_TZ)
+    end_dt = datetime.fromisoformat(f"{today}T{end_hhmm}:00").replace(tzinfo=LOCAL_TZ)
     first_30_end = min(start_dt + timedelta(minutes=30), end_dt)
     delta = int((first_30_end - start_dt).total_seconds())
     if delta <= 0:
         return start_dt
-    return start_dt.fromtimestamp(start_dt.timestamp() + random.randint(0, delta))
+    return start_dt + timedelta(seconds=random.randint(0, delta))
 
 
 def random_time_first_30_minutes_for_day(day: date, start_hhmm: str, end_hhmm: str) -> datetime:
     day_str = day.isoformat()
-    start_dt = datetime.fromisoformat(f"{day_str}T{start_hhmm}:00")
-    end_dt = datetime.fromisoformat(f"{day_str}T{end_hhmm}:00")
+    start_dt = datetime.fromisoformat(f"{day_str}T{start_hhmm}:00").replace(tzinfo=LOCAL_TZ)
+    end_dt = datetime.fromisoformat(f"{day_str}T{end_hhmm}:00").replace(tzinfo=LOCAL_TZ)
     first_30_end = min(start_dt + timedelta(minutes=30), end_dt)
     delta = int((first_30_end - start_dt).total_seconds())
     if delta <= 0:
         return start_dt
-    return start_dt.fromtimestamp(start_dt.timestamp() + random.randint(0, delta))
+    return start_dt + timedelta(seconds=random.randint(0, delta))
 
 
 def validate_study_windows(payload: StudyIn) -> None:
@@ -373,7 +373,7 @@ def study_date_range(study_row) -> list[date]:
 
 def scheduled_datetime_for_day_time(day: date, hhmm: str) -> datetime:
     validate_hhmm(hhmm, "additional survey time")
-    return datetime.fromisoformat(f"{day.isoformat()}T{hhmm}:00")
+    return datetime.fromisoformat(f"{day.isoformat()}T{hhmm}:00").replace(tzinfo=LOCAL_TZ)
 
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
@@ -414,10 +414,10 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 """
                 DELETE FROM prompts
                 WHERE participant_id = %s
-                  AND scheduled_time::date = %s
+                                    AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
                   AND status != 'sent'
                 """,
-                (participant["id"], day.isoformat()),
+                                (participant["id"], APP_TIMEZONE, day.isoformat()),
             )
 
         for idx, window in enumerate(selected_windows):
@@ -430,10 +430,12 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 existing = conn.execute(
                     """
                     SELECT id FROM prompts
-                    WHERE participant_id = %s AND window_index = %s AND scheduled_time::date = %s
+                                        WHERE participant_id = %s
+                                            AND window_index = %s
+                                            AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
                     LIMIT 1
                     """,
-                    (participant["id"], idx + 1, day.isoformat()),
+                                        (participant["id"], idx + 1, APP_TIMEZONE, day.isoformat()),
                 ).fetchone()
                 if existing:
                     continue
@@ -464,10 +466,12 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 existing = conn.execute(
                     """
                     SELECT id FROM prompts
-                    WHERE participant_id = %s AND window_index = %s AND scheduled_time::date = %s
+                                        WHERE participant_id = %s
+                                            AND window_index = %s
+                                            AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
                     LIMIT 1
                     """,
-                    (participant["id"], prompt_index, day.isoformat()),
+                                        (participant["id"], prompt_index, APP_TIMEZONE, day.isoformat()),
                 ).fetchone()
                 if existing:
                     continue
@@ -638,16 +642,28 @@ def list_studies():
             """
             SELECT
                 window_index,
-                scheduled_time::date AS day,
-                to_char(scheduled_time::timestamp, 'HH24:MI') AS hhmm,
+                (scheduled_time::timestamptz AT TIME ZONE %s)::date AS day,
+                to_char((scheduled_time::timestamptz AT TIME ZONE %s), 'HH24:MI') AS hhmm,
                 MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
             FROM prompts
             WHERE participant_id = %s
-              AND scheduled_time::date BETWEEN %s AND %s
-            GROUP BY window_index, scheduled_time::date, scheduled_time::timestamp
+              AND (scheduled_time::timestamptz AT TIME ZONE %s)::date BETWEEN %s AND %s
+            GROUP BY
+                window_index,
+                (scheduled_time::timestamptz AT TIME ZONE %s)::date,
+                to_char((scheduled_time::timestamptz AT TIME ZONE %s), 'HH24:MI')
             ORDER BY day, window_index
             """,
-            (item["participant_id"], item["start_date"], item["end_date"]),
+            (
+                APP_TIMEZONE,
+                APP_TIMEZONE,
+                item["participant_id"],
+                APP_TIMEZONE,
+                item["start_date"],
+                item["end_date"],
+                APP_TIMEZONE,
+                APP_TIMEZONE,
+            ),
         ).fetchall()
         by_window: dict[str, list[dict]] = {}
         for s in schedules:
@@ -832,9 +848,11 @@ def dashboard():
         """
         SELECT COUNT(*) c
         FROM prompts
-        WHERE status='sent' AND sent_time::date = CURRENT_DATE
-        """
-    ).fetchone()["c"]
+        WHERE status='sent'
+          AND (sent_time::timestamptz AT TIME ZONE %s)::date = (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+                """,
+        (APP_TIMEZONE, APP_TIMEZONE),
+        ).fetchone()["c"]
     total_prompts = conn.execute("SELECT COUNT(*) c FROM prompts").fetchone()["c"]
     sent_prompts = conn.execute("SELECT COUNT(*) c FROM prompts WHERE status='sent'").fetchone()["c"]
     conn.close()
