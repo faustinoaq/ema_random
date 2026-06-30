@@ -437,6 +437,20 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 log_event("schedule_skipped", f"study_id={study_row['id']} missing link for window {idx + 1}")
                 continue
 
+            sent_exists = conn.execute(
+                """
+                SELECT id FROM prompts
+                WHERE participant_id = %s
+                  AND window_index = %s
+                  AND status = 'sent'
+                  AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
+                LIMIT 1
+                """,
+                (participant["id"], idx + 1, APP_TIMEZONE, day.isoformat()),
+            ).fetchone()
+            if sent_exists:
+                continue
+
             if not overwrite_unsent:
                 existing = conn.execute(
                     """
@@ -471,6 +485,20 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 continue
             if not survey_link or not time_hhmm:
                 log_event("schedule_skipped", f"study_id={study_row['id']} missing {survey_type} link/time")
+                continue
+
+            sent_exists = conn.execute(
+                """
+                SELECT id FROM prompts
+                WHERE participant_id = %s
+                  AND window_index = %s
+                  AND status = 'sent'
+                  AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
+                LIMIT 1
+                """,
+                (participant["id"], prompt_index, APP_TIMEZONE, day.isoformat()),
+            ).fetchone()
+            if sent_exists:
                 continue
 
             if not overwrite_unsent:
@@ -566,10 +594,67 @@ def mark_prompt_as_sent(prompt_id: int, sent_at: str) -> None:
     conn.close()
 
 
+def mark_prompt_as_skipped(prompt_id: int) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE prompts SET status = 'skipped' WHERE id = %s AND status IN ('scheduled', 'sending')",
+        (prompt_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def skip_stale_scheduled_prompts() -> int:
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        WITH stale AS (
+            SELECT id
+            FROM prompts
+            WHERE status = 'scheduled'
+              AND (scheduled_time::timestamptz AT TIME ZONE %s)::date < (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+        )
+        UPDATE prompts p
+        SET status = 'skipped'
+        FROM stale
+        WHERE p.id = stale.id
+        RETURNING p.id
+        """,
+        (APP_TIMEZONE, APP_TIMEZONE),
+    ).fetchall()
+    conn.commit()
+    conn.close()
+    return len(rows)
+
+
+def already_sent_same_window_day(participant_id: int, window_index: int, day_iso: str, exclude_prompt_id: int) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        """
+        SELECT id
+        FROM prompts
+        WHERE participant_id = %s
+          AND window_index = %s
+          AND status = 'sent'
+          AND id <> %s
+          AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
+        LIMIT 1
+        """,
+        (participant_id, window_index, exclude_prompt_id, APP_TIMEZONE, day_iso),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
 def dispatch_due_prompts() -> int:
     if not prompt_delivery_enabled():
         print("[prompt_dispatch] skipped: Twilio credentials or sender configuration missing")
         return 0
+
+    stale_skipped = skip_stale_scheduled_prompts()
+    if stale_skipped:
+        print(f"[prompt_dispatch] skipped {stale_skipped} stale prompt(s) from previous days")
+        log_event("prompt_stale_skipped", f"count={stale_skipped}")
 
     conn = get_conn()
     claimed_prompts = claim_due_prompts(conn)
@@ -582,6 +667,29 @@ def dispatch_due_prompts() -> int:
     sent_count = 0
     for prompt in claimed_prompts:
         prompt_id = prompt["id"]
+        prompt_day = (
+            datetime.fromisoformat(str(prompt["scheduled_time"]).replace("Z", "+00:00"))
+            .astimezone(LOCAL_TZ)
+            .date()
+            .isoformat()
+        )
+        if already_sent_same_window_day(
+            prompt["participant_id"],
+            prompt["window_index"],
+            prompt_day,
+            prompt_id,
+        ):
+            print(
+                "[prompt_dispatch] skipped duplicate "
+                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} "
+                f"window_index={prompt['window_index']} day={prompt_day}"
+            )
+            mark_prompt_as_skipped(prompt_id)
+            log_event(
+                "prompt_duplicate_skipped",
+                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} window_index={prompt['window_index']} day={prompt_day}",
+            )
+            continue
         print(
             "[prompt_dispatch] sending "
             f"prompt_id={prompt_id} participant_id={prompt['participant_id']} "
