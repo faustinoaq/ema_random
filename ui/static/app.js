@@ -961,12 +961,10 @@ function exportParticipantsCsv() {
     return;
   }
   downloadCsv("participants.csv", [
-    ["id", "participant_id", "phone", "redcap_record_id", "status"],
+    ["participant_id", "phone", "status"],
     ...participantsCache.map((row) => [
-      row.id,
       row.participant_id,
       row.phone,
-      row.redcap_record_id || "",
       row.status || "",
     ]),
   ]);
