@@ -640,29 +640,32 @@ def list_studies():
         item["additional_surveys"] = json.loads(item.pop("additional_surveys_json") or "[]")
         schedules = conn.execute(
             """
+            WITH localized_prompts AS (
+                SELECT
+                    window_index,
+                    (scheduled_time::timestamptz AT TIME ZONE %s) AS local_time,
+                    status
+                FROM prompts
+                WHERE participant_id = %s
+            )
             SELECT
                 window_index,
-                (scheduled_time::timestamptz AT TIME ZONE %s)::date AS day,
-                to_char((scheduled_time::timestamptz AT TIME ZONE %s), 'HH24:MI') AS hhmm,
+                local_time::date AS day,
+                to_char(local_time, 'HH24:MI') AS hhmm,
                 MAX(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS is_sent
-            FROM prompts
-            WHERE participant_id = %s
-              AND (scheduled_time::timestamptz AT TIME ZONE %s)::date BETWEEN %s AND %s
+            FROM localized_prompts
+            WHERE local_time::date BETWEEN %s AND %s
             GROUP BY
                 window_index,
-                (scheduled_time::timestamptz AT TIME ZONE %s)::date,
-                to_char((scheduled_time::timestamptz AT TIME ZONE %s), 'HH24:MI')
+                local_time::date,
+                to_char(local_time, 'HH24:MI')
             ORDER BY day, window_index
             """,
             (
                 APP_TIMEZONE,
-                APP_TIMEZONE,
                 item["participant_id"],
-                APP_TIMEZONE,
                 item["start_date"],
                 item["end_date"],
-                APP_TIMEZONE,
-                APP_TIMEZONE,
             ),
         ).fetchall()
         by_window: dict[str, list[dict]] = {}
