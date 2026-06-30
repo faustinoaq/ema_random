@@ -305,7 +305,7 @@ def prompt_delivery_enabled() -> bool:
 
 
 def build_prompt_sms_body(survey_link: str) -> str:
-    return f"Please complete your survey: {survey_link}\nReply STOP to opt out."
+    return f"Please complete your survey: {survey_link}"
 
 
 def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
