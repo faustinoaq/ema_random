@@ -1029,13 +1029,6 @@ def update_study(study_id: int, payload: StudyIn):
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
     result["additional_surveys"] = json.loads(result.pop("additional_surveys_json") or "[]")
-    conn = get_conn()
-    study_for_schedule = conn.execute("SELECT * FROM studies WHERE id = %s", (study_id,)).fetchone()
-    if study_for_schedule:
-        created = regenerate_study_schedule(conn, study_for_schedule, overwrite_unsent=True)
-        log_event("schedule_generated", f"study_id={study_id} prompts_generated={created}")
-    conn.commit()
-    conn.close()
     return result
 
 
