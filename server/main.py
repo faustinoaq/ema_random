@@ -61,6 +61,7 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
+PROMPT_DISPATCH_INTERVAL_SECONDS = max(15, int(os.getenv("PROMPT_DISPATCH_INTERVAL_SECONDS", "30")))
 
 SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_1": "window_1",
@@ -194,10 +195,12 @@ def update_survey_template_settings(payload: SurveyTemplatesPayload):
 
 
 def log_event(event: str, details: str) -> None:
+    timestamp = datetime.now(LOCAL_TZ).isoformat()
+    print(f"[{timestamp}] {event}: {details}")
     conn = get_conn()
     conn.execute(
         "INSERT INTO logs (timestamp, event, details) VALUES (%s, %s, %s)",
-        (datetime.now(LOCAL_TZ).isoformat(), event, details),
+        (timestamp, event, details),
     )
     conn.commit()
     conn.close()
@@ -295,6 +298,14 @@ def send_sms_message(to_number: str, body: str) -> None:
     with urllib.request.urlopen(req, timeout=30) as res:
         if res.status >= 300:
             raise HTTPException(status_code=502, detail="Twilio SMS send failed")
+
+
+def prompt_delivery_enabled() -> bool:
+    return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and (TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID))
+
+
+def build_prompt_sms_body(survey_link: str) -> str:
+    return f"Please complete your survey: {survey_link}\nReply STOP to opt out."
 
 
 def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
@@ -415,7 +426,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 DELETE FROM prompts
                 WHERE participant_id = %s
                                     AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
-                  AND status != 'sent'
+                                    AND status = 'scheduled'
                 """,
                                 (participant["id"], APP_TIMEZONE, day.isoformat()),
             )
@@ -510,6 +521,111 @@ def generate_daily_schedule() -> None:
     log_event("schedule_generated", f"Generated {total_scheduled} prompts")
 
 
+def claim_due_prompts(conn, limit: int = 50) -> list[dict]:
+    rows = conn.execute(
+        """
+        WITH due AS (
+            SELECT p.id, pr.phone, pr.participant_id AS participant_code
+            FROM prompts p
+            JOIN participants pr ON pr.id = p.participant_id
+            WHERE p.status = 'scheduled'
+              AND pr.status = 'active'
+              AND p.scheduled_time::timestamptz <= CURRENT_TIMESTAMP
+            ORDER BY p.scheduled_time::timestamptz, p.id
+            FOR UPDATE SKIP LOCKED
+            LIMIT %s
+        )
+        UPDATE prompts p
+        SET status = 'sending'
+        FROM due
+        WHERE p.id = due.id
+        RETURNING p.id, p.participant_id, p.window_index, p.scheduled_time, p.survey_link, due.phone, due.participant_code
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_prompt_as_scheduled(prompt_id: int) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE prompts SET status = 'scheduled' WHERE id = %s AND status = 'sending'",
+        (prompt_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_prompt_as_sent(prompt_id: int, sent_at: str) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE prompts SET status = 'sent', sent_time = %s WHERE id = %s AND status = 'sending'",
+        (sent_at, prompt_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def dispatch_due_prompts() -> int:
+    if not prompt_delivery_enabled():
+        print("[prompt_dispatch] skipped: Twilio credentials or sender configuration missing")
+        return 0
+
+    conn = get_conn()
+    claimed_prompts = claim_due_prompts(conn)
+    conn.commit()
+    conn.close()
+
+    if claimed_prompts:
+        print(f"[prompt_dispatch] claimed {len(claimed_prompts)} due prompt(s)")
+
+    sent_count = 0
+    for prompt in claimed_prompts:
+        prompt_id = prompt["id"]
+        print(
+            "[prompt_dispatch] sending "
+            f"prompt_id={prompt_id} participant_id={prompt['participant_id']} "
+            f"participant_code={prompt['participant_code']} window_index={prompt['window_index']} "
+            f"scheduled_time={prompt['scheduled_time']} phone={prompt['phone']}"
+        )
+        try:
+            send_sms_message(prompt["phone"], build_prompt_sms_body(prompt["survey_link"]))
+        except HTTPException as exc:
+            print(f"[prompt_dispatch] failed prompt_id={prompt_id}: {exc.detail}")
+            mark_prompt_as_scheduled(prompt_id)
+            log_event(
+                "prompt_send_failed",
+                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} detail={exc.detail}",
+            )
+            continue
+        except Exception as exc:
+            print(f"[prompt_dispatch] failed prompt_id={prompt_id}: {exc}")
+            mark_prompt_as_scheduled(prompt_id)
+            log_event(
+                "prompt_send_failed",
+                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} detail={exc}",
+            )
+            continue
+
+        sent_at = datetime.now(LOCAL_TZ).isoformat()
+        mark_prompt_as_sent(prompt_id, sent_at)
+        print(f"[prompt_dispatch] sent prompt_id={prompt_id} at {sent_at}")
+        log_event(
+            "prompt_sent",
+            f"prompt_id={prompt_id} participant_id={prompt['participant_id']} window_index={prompt['window_index']}",
+        )
+        sent_count += 1
+
+    return sent_count
+
+
+def run_prompt_dispatch() -> None:
+    print(f"[prompt_dispatch] tick at {datetime.now(LOCAL_TZ).isoformat()}")
+    sent_count = dispatch_due_prompts()
+    if sent_count:
+        log_event("prompt_dispatch_run", f"sent={sent_count}")
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -518,6 +634,18 @@ def on_startup() -> None:
     conn.commit()
     conn.close()
     scheduler.add_job(generate_daily_schedule, "cron", hour=0, minute=0, id="daily_generation")
+    scheduler.add_job(
+        run_prompt_dispatch,
+        "interval",
+        seconds=PROMPT_DISPATCH_INTERVAL_SECONDS,
+        id="prompt_dispatch",
+        max_instances=1,
+        coalesce=True,
+    )
+    print(
+        "Prompt dispatch worker configured "
+        f"interval={PROMPT_DISPATCH_INTERVAL_SECONDS}s enabled={prompt_delivery_enabled()}"
+    )
     scheduler.start()
 
 

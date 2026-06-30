@@ -29,13 +29,13 @@ Research Staff (Browser)
 │ - Scheduler trigger endpoint             │
 └───────────────┬──────────────────────────┘
                 │
-                ├──────────────► SQLite (study.db)
+                ├──────────────► SQLite/PostgreSQL
                 │                participants/studies/prompts/logs
                 │
                 └──────────────► APScheduler
-                                 (daily + manual random time generation)
+                                 (daily schedule generation + due prompt dispatch)
                                               │
-                                              │ send SMS (implementation hook)
+                                              │ send SMS for due prompts
                                               ▼
                                       Twilio SMS API
                                               │
@@ -86,6 +86,7 @@ POSTGRESQL_PASSWORD=change_me
 POSTGRESQL_DATABASE=ema_random
 POSTGRESQL_SERVICE_HOST=your-postgres-host
 POSTGRESQL_SERVICE_PORT=5432
+PROMPT_DISPATCH_INTERVAL_SECONDS=30
 ```
 
 ## Auth
