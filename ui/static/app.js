@@ -36,6 +36,25 @@ function formatTime(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
+function parseTimeToMinutes(value, fallback = "08:00") {
+  const [rawHours, rawMinutes] = (value || fallback).split(":");
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    const [fbHours, fbMinutes] = fallback.split(":").map(Number);
+    return fbHours * 60 + fbMinutes;
+  }
+  return hours * 60 + minutes;
+}
+
+function formatMinutesToTime(totalMinutes) {
+  const minutesInDay = 24 * 60;
+  const normalized = ((Math.round(totalMinutes) % minutesInDay) + minutesInDay) % minutesInDay;
+  const hh = Math.floor(normalized / 60);
+  const mm = normalized % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
 function parseTimeToDate(timeValue, fallback = "08:00") {
   const [hours, minutes] = (timeValue || fallback).split(":").map(Number);
   const date = new Date();
@@ -74,12 +93,25 @@ function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
   return windows;
 }
 
+function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = FIXED_END_OF_DAY_TIME) {
+  if (!firstWindowStart) return "08:00";
+
+  const firstWindowMinutes = parseTimeToMinutes(firstWindowStart, "09:00");
+  const eodMinutes = parseTimeToMinutes(eodTime, FIXED_END_OF_DAY_TIME);
+  const intervalEndMinutes = eodMinutes - 30;
+
+  // Inverse of: window1 = 0.95 * intervalStart + 0.05 * intervalEnd, where intervalStart = wake + 60.
+  const intervalStartMinutes = (firstWindowMinutes - 0.05 * intervalEndMinutes) / 0.95;
+  const wakeMinutes = intervalStartMinutes - 60;
+  return formatMinutesToTime(wakeMinutes);
+}
+
 function getDisplayWindowsForStudy(study) {
   const persistedWindows = Array.isArray(study?.windows) ? study.windows : [];
   const firstStart = persistedWindows[0]?.start;
   if (!firstStart) return persistedWindows;
 
-  const wakeTime = shiftTime(firstStart, -60, "08:00");
+  const wakeTime = inferWakeTimeFromFirstWindowStart(firstStart, FIXED_END_OF_DAY_TIME);
   const dynamicWindows = computeStudyWindowsFromWake(wakeTime, FIXED_END_OF_DAY_TIME);
   return dynamicWindows.map((windowRange, idx) => ({
     start: windowRange.start,
@@ -962,7 +994,10 @@ async function loadStudies() {
       document.getElementById("endDate").value = study.end_date;
       document.getElementById("promptsPerDay").value = 4;
       document.getElementById("studyComments").value = study.comments || "";
-      document.getElementById("studyWakeTime").value = shiftTime(study.windows?.[0]?.start || "09:00", -60, "09:00");
+      document.getElementById("studyWakeTime").value = inferWakeTimeFromFirstWindowStart(
+        study.windows?.[0]?.start || "09:00",
+        FIXED_END_OF_DAY_TIME
+      );
       const eodSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
       const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
       eodSurveyTimeInput.value = eodSurvey?.time || FIXED_END_OF_DAY_TIME;
@@ -1050,7 +1085,9 @@ function exportStudiesCsv() {
     const participantId = row.participant_code || row.participant_id || "";
     const comments = row.comments || "";
     const displayWindows = getDisplayWindowsForStudy(row);
-    const wakingTime = displayWindows[0]?.start ? shiftTime(displayWindows[0].start, -60, "08:00") : "";
+    const wakingTime = row.windows?.[0]?.start
+      ? inferWakeTimeFromFirstWindowStart(row.windows[0].start, FIXED_END_OF_DAY_TIME)
+      : "";
 
     const windowRangeByIndex = {};
     displayWindows.forEach((window, idx) => {
