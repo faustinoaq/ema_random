@@ -323,6 +323,116 @@ def random_time_within_range_for_day(day: date, start_hhmm: str, end_hhmm: str) 
     return random_time_within_range(start_dt, end_dt)
 
 
+def window_bounds_for_day(day: date, start_hhmm: str, end_hhmm: str) -> tuple[datetime, datetime]:
+    day_str = day.isoformat()
+    start_dt = datetime.fromisoformat(f"{day_str}T{start_hhmm}:00").replace(tzinfo=LOCAL_TZ)
+    end_dt = datetime.fromisoformat(f"{day_str}T{end_hhmm}:00").replace(tzinfo=LOCAL_TZ)
+    if end_dt < start_dt:
+        end_dt = start_dt
+    return start_dt, end_dt
+
+
+def windows_can_support_gap(window_bounds: list[tuple[datetime, datetime]], gap_seconds: int) -> bool:
+    if not window_bounds:
+        return True
+
+    scheduled = window_bounds[0][0]
+    if scheduled > window_bounds[0][1]:
+        return False
+
+    for start_dt, end_dt in window_bounds[1:]:
+        scheduled = max(start_dt, scheduled + timedelta(seconds=gap_seconds))
+        if scheduled > end_dt:
+            return False
+    return True
+
+
+def random_times_for_windows_with_gap(
+    window_bounds: list[tuple[datetime, datetime]], gap_seconds: int
+) -> list[datetime] | None:
+    if not window_bounds:
+        return []
+
+    latest_feasible = [bounds[1] for bounds in window_bounds]
+    for idx in range(len(window_bounds) - 2, -1, -1):
+        constrained_latest = latest_feasible[idx + 1] - timedelta(seconds=gap_seconds)
+        latest_feasible[idx] = min(window_bounds[idx][1], constrained_latest)
+        if latest_feasible[idx] < window_bounds[idx][0]:
+            return None
+
+    scheduled: list[datetime] = []
+    for idx, (start_dt, _end_dt) in enumerate(window_bounds):
+        earliest = start_dt
+        if idx > 0:
+            earliest = max(earliest, scheduled[idx - 1] + timedelta(seconds=gap_seconds))
+        latest = latest_feasible[idx]
+        if earliest > latest:
+            return None
+        scheduled.append(random_time_within_range(earliest, latest))
+
+    return scheduled
+
+
+def compute_effective_window_spacing_seconds(window_bounds: list[tuple[datetime, datetime]]) -> int | None:
+    if len(window_bounds) < 2:
+        return 0
+
+    target_gap_seconds = 90 * 60
+    floor_gap_seconds = 45 * 60
+    interval_count = len(window_bounds) - 1
+
+    total_span_seconds = int((window_bounds[-1][1] - window_bounds[0][0]).total_seconds())
+    total_span_seconds = max(0, total_span_seconds)
+    if total_span_seconds >= interval_count * target_gap_seconds:
+        desired_gap_seconds = target_gap_seconds
+    else:
+        desired_gap_seconds = max(floor_gap_seconds, total_span_seconds // interval_count)
+
+    if windows_can_support_gap(window_bounds, desired_gap_seconds):
+        return desired_gap_seconds
+    if windows_can_support_gap(window_bounds, floor_gap_seconds):
+        return floor_gap_seconds
+    return None
+
+
+def schedule_window_times_for_day(
+    window_bounds: list[tuple[datetime, datetime]],
+) -> tuple[list[datetime], int, str | None]:
+    if not window_bounds:
+        return [], 0, None
+
+    spacing_seconds = compute_effective_window_spacing_seconds(window_bounds)
+    if spacing_seconds is not None:
+        scheduled_times = random_times_for_windows_with_gap(window_bounds, spacing_seconds)
+        if scheduled_times is not None:
+            return scheduled_times, spacing_seconds, None
+
+    # If 45-minute floor cannot be satisfied for all windows, schedule as many as possible.
+    floor_gap_seconds = 45 * 60
+    max_windows_supported = 0
+    for count in range(len(window_bounds), 0, -1):
+        if count == 1 or windows_can_support_gap(window_bounds[:count], floor_gap_seconds):
+            max_windows_supported = count
+            break
+
+    if max_windows_supported == 1:
+        scheduled_times = [random_time_within_range(window_bounds[0][0], window_bounds[0][1])]
+        warning = (
+            "Insufficient interval for 4 EMA prompts with minimum 45-minute spacing; "
+            "scheduled only 1 EMA prompt."
+        )
+        return scheduled_times, 0, warning
+
+    scheduled_times = random_times_for_windows_with_gap(window_bounds[:max_windows_supported], floor_gap_seconds)
+    if scheduled_times is None:
+        scheduled_times = [bounds[0] for bounds in window_bounds[:max_windows_supported]]
+    warning = (
+        "Insufficient interval for 4 EMA prompts with minimum 45-minute spacing; "
+        f"scheduled only {max_windows_supported} EMA prompts."
+    )
+    return scheduled_times, floor_gap_seconds, warning
+
+
 def validate_study_windows(payload: StudyIn) -> None:
     if len(payload.windows) < payload.prompts_per_day:
         raise HTTPException(
@@ -435,11 +545,35 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                                 (participant["id"], APP_TIMEZONE, day.isoformat()),
             )
 
-        for idx, window in enumerate(selected_windows):
+        window_bounds = [
+            window_bounds_for_day(day, window["start"], window["end"])
+            for window in selected_windows
+        ]
+        scheduled_times, spacing_seconds, warning_message = schedule_window_times_for_day(window_bounds)
+        if spacing_seconds >= 45 * 60 and spacing_seconds < 90 * 60:
+            log_event(
+                "schedule_spacing_reduced",
+                f"study_id={study_row['id']} day={day.isoformat()} gap_seconds={spacing_seconds}",
+            )
+        if warning_message:
+            log_event(
+                "schedule_warning",
+                f"study_id={study_row['id']} day={day.isoformat()} message={warning_message}",
+            )
+
+        for idx, (window, scheduled_dt_obj) in enumerate(zip(selected_windows, scheduled_times)):
             survey_link = (window.get("link") or "").strip()
             if not survey_link:
-                log_event("schedule_skipped", f"study_id={study_row['id']} missing link for window {idx + 1}")
-                continue
+                default_link = (get_default_survey_template_for_window_index(conn, idx + 1) or "").strip()
+                if default_link:
+                    survey_link = default_link
+                    log_event(
+                        "schedule_window_default_link",
+                        f"study_id={study_row['id']} day={day.isoformat()} window_index={idx + 1}",
+                    )
+                else:
+                    log_event("schedule_skipped", f"study_id={study_row['id']} missing link for window {idx + 1}")
+                    continue
 
             sent_exists = conn.execute(
                 """
@@ -469,7 +603,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 if existing:
                     continue
 
-            scheduled_dt = random_time_within_range_for_day(day, window["start"], window["end"]).isoformat()
+            scheduled_dt = scheduled_dt_obj.isoformat()
             full_link = append_pid_to_url(survey_link, participant_pid)
             conn.execute(
                 """
