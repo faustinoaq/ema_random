@@ -74,6 +74,20 @@ function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
   return windows;
 }
 
+function getDisplayWindowsForStudy(study) {
+  const persistedWindows = Array.isArray(study?.windows) ? study.windows : [];
+  const firstStart = persistedWindows[0]?.start;
+  if (!firstStart) return persistedWindows;
+
+  const wakeTime = shiftTime(firstStart, -60, "08:00");
+  const dynamicWindows = computeStudyWindowsFromWake(wakeTime, FIXED_END_OF_DAY_TIME);
+  return dynamicWindows.map((windowRange, idx) => ({
+    start: windowRange.start,
+    end: windowRange.end,
+    link: persistedWindows[idx]?.link || "",
+  }));
+}
+
 function playRangeUpdatedAnimation(el) {
   if (!el) return;
   el.classList.remove("range-updated");
@@ -886,8 +900,8 @@ async function loadStudies() {
   }
   body.innerHTML = rows
     .map((r) => {
-      const persistedWindows = Array.isArray(r.windows) ? r.windows : [];
-      const windows = persistedWindows
+      const displayWindows = getDisplayWindowsForStudy(r);
+      const windows = displayWindows
         .map((w, i) => {
           const schedule = r.window_schedules?.[String(i + 1)] || [];
           const start = w?.start || "--:--";
@@ -1035,10 +1049,11 @@ function exportStudiesCsv() {
   studiesCache.forEach((row) => {
     const participantId = row.participant_code || row.participant_id || "";
     const comments = row.comments || "";
-    const wakingTime = row.windows?.[0]?.start || "";
+    const displayWindows = getDisplayWindowsForStudy(row);
+    const wakingTime = displayWindows[0]?.start ? shiftTime(displayWindows[0].start, -60, "08:00") : "";
 
     const windowRangeByIndex = {};
-    (row.windows || []).forEach((window, idx) => {
+    displayWindows.forEach((window, idx) => {
       const windowIndex = String(idx + 1);
       windowRangeByIndex[windowIndex] = `${window.start || ""}-${window.end || ""}`;
     });
