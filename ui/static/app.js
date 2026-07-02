@@ -49,19 +49,25 @@ function shiftTime(timeValue, minutesDelta, fallback = "08:00") {
 }
 
 function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
-  const base = parseTimeToDate(wakeTime, "08:00");
-  base.setMinutes(base.getMinutes() + 60); // Window 1 starts 1 hour after wake time.
+  const intervalStart = parseTimeToDate(wakeTime, "08:00");
+  intervalStart.setMinutes(intervalStart.getMinutes() + 60);
+  const intervalEnd = parseTimeToDate(eodTime, "20:00");
+  intervalEnd.setMinutes(intervalEnd.getMinutes() - 30);
+  if (intervalEnd <= intervalStart) {
+    intervalEnd.setTime(intervalStart.getTime() + 30 * 60 * 1000);
+  }
+
+  const intervalLength = intervalEnd.getTime() - intervalStart.getTime();
+  const windowFractions = [
+    [0.05, 0.25],
+    [0.30, 0.50],
+    [0.55, 0.75],
+    [0.80, 0.98],
+  ];
   const windows = [];
-  for (let i = 0; i < 4; i += 1) {
-    const start = new Date(base.getTime() + i * 150 * 60 * 1000);
-    let end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-    if (i === 3) {
-      end = parseTimeToDate(eodTime, "20:00");
-      end.setMinutes(end.getMinutes() - 30); // Window 4 ends 30 minutes before EOD.
-      if (end <= start) {
-        end = new Date(start.getTime() + 30 * 60 * 1000);
-      }
-    }
+  for (const [startFraction, endFraction] of windowFractions) {
+    const start = new Date(intervalStart.getTime() + intervalLength * startFraction);
+    const end = new Date(intervalStart.getTime() + intervalLength * endFraction);
     windows.push({ start: formatTime(start), end: formatTime(end) });
   }
   return windows;

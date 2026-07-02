@@ -309,26 +309,18 @@ def build_prompt_sms_body(survey_link: str) -> str:
     return f"Please complete your survey: {survey_link}"
 
 
-def random_time_first_30_minutes(start_hhmm: str, end_hhmm: str) -> datetime:
-    today = datetime.now(LOCAL_TZ).date().isoformat()
-    start_dt = datetime.fromisoformat(f"{today}T{start_hhmm}:00").replace(tzinfo=LOCAL_TZ)
-    end_dt = datetime.fromisoformat(f"{today}T{end_hhmm}:00").replace(tzinfo=LOCAL_TZ)
-    first_30_end = min(start_dt + timedelta(minutes=30), end_dt)
-    delta = int((first_30_end - start_dt).total_seconds())
+def random_time_within_range(start_dt: datetime, end_dt: datetime) -> datetime:
+    delta = int((end_dt - start_dt).total_seconds())
     if delta <= 0:
         return start_dt
     return start_dt + timedelta(seconds=random.randint(0, delta))
 
 
-def random_time_first_30_minutes_for_day(day: date, start_hhmm: str, end_hhmm: str) -> datetime:
+def random_time_within_range_for_day(day: date, start_hhmm: str, end_hhmm: str) -> datetime:
     day_str = day.isoformat()
     start_dt = datetime.fromisoformat(f"{day_str}T{start_hhmm}:00").replace(tzinfo=LOCAL_TZ)
     end_dt = datetime.fromisoformat(f"{day_str}T{end_hhmm}:00").replace(tzinfo=LOCAL_TZ)
-    first_30_end = min(start_dt + timedelta(minutes=30), end_dt)
-    delta = int((first_30_end - start_dt).total_seconds())
-    if delta <= 0:
-        return start_dt
-    return start_dt + timedelta(seconds=random.randint(0, delta))
+    return random_time_within_range(start_dt, end_dt)
 
 
 def validate_study_windows(payload: StudyIn) -> None:
@@ -477,7 +469,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 if existing:
                     continue
 
-            scheduled_dt = random_time_first_30_minutes_for_day(day, window["start"], window["end"]).isoformat()
+            scheduled_dt = random_time_within_range_for_day(day, window["start"], window["end"]).isoformat()
             full_link = append_pid_to_url(survey_link, participant_pid)
             conn.execute(
                 """
