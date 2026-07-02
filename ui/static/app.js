@@ -10,6 +10,7 @@ async function getJSON(url, options) {
 
 const windowLinks = { 1: "", 2: "", 3: "", 4: "" };
 const APP_TIME_ZONE = "America/New_York";
+const FIXED_END_OF_DAY_TIME = "20:30";
 const LOG_DATE_TIME_FORMATTER = new Intl.DateTimeFormat([], {
   timeZone: APP_TIME_ZONE,
   year: "numeric",
@@ -204,6 +205,11 @@ function applySurveyTemplateDefaultsToStudy() {
   windowLinks[2] = surveyTemplateDefaults.window_2;
   windowLinks[3] = surveyTemplateDefaults.window_3;
   windowLinks[4] = surveyTemplateDefaults.window_4;
+}
+
+function enforceFixedEodTime() {
+  if (!eodSurveyTimeInput) return;
+  eodSurveyTimeInput.value = FIXED_END_OF_DAY_TIME;
 }
 
 function clearSavedStudyLinkStates() {
@@ -558,9 +564,9 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("endDate").value = defaults.endDate;
   document.getElementById("studyWakeTime").value = "08:00";
   document.getElementById("promptsPerDay").value = 4;
-  eodSurveyTimeInput.value = "20:00";
+  enforceFixedEodTime();
   dbsSurveyTimeInput.value = "19:30";
-  refreshStudyWindowLabels("08:00", "20:00");
+  refreshStudyWindowLabels("08:00", FIXED_END_OF_DAY_TIME);
   additionalSurveyLinks.end_of_day = "";
   additionalSurveyLinks.dry_blood_spot = "";
   applySurveyTemplateDefaultsToStudy();
@@ -946,7 +952,8 @@ async function loadStudies() {
       document.getElementById("studyWakeTime").value = shiftTime(study.windows?.[0]?.start || "09:00", -60, "09:00");
       const eodSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
       const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
-      eodSurveyTimeInput.value = eodSurvey?.time || "20:00";
+      eodSurveyTimeInput.value = eodSurvey?.time || FIXED_END_OF_DAY_TIME;
+      enforceFixedEodTime();
       dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
       additionalSurveyLinks.end_of_day = stripPidFromUrl(eodSurvey?.link || "");
       additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
@@ -1152,7 +1159,8 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     }
   }
   const wakeTime = document.getElementById("studyWakeTime").value || "08:00";
-  const eodTime = eodSurveyTimeInput.value || "20:00";
+  enforceFixedEodTime();
+  const eodTime = FIXED_END_OF_DAY_TIME;
   refreshStudyWindowLabels(wakeTime, eodTime);
   const payload = {
     participant_id: Number(studyParticipantSelect.value),
@@ -1169,7 +1177,7 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     additional_surveys: [
       {
         survey_type: "end_of_day",
-        time: eodSurveyTimeInput.value || "20:00",
+        time: FIXED_END_OF_DAY_TIME,
         link: getAdditionalSurveyRawLink("end_of_day"),
       },
       {
@@ -1225,5 +1233,6 @@ async function bootstrap() {
 }
 
 bootstrap();
+enforceFixedEodTime();
 updateStudyLinkButtonStates();
 refreshAdditionalSurveyPreviewLinks();
