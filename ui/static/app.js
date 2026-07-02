@@ -886,14 +886,13 @@ async function loadStudies() {
   }
   body.innerHTML = rows
     .map((r) => {
-      const tableWindow1Start = r.windows?.[0]?.start || "09:00";
-      const tableWakeTime = shiftTime(tableWindow1Start, -60, "09:00");
-      const eodSurvey = (r.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
-      const computedWindows = computeStudyWindowsFromWake(tableWakeTime, eodSurvey?.time || "20:00");
-      const windows = computedWindows
+      const persistedWindows = Array.isArray(r.windows) ? r.windows : [];
+      const windows = persistedWindows
         .map((w, i) => {
           const schedule = r.window_schedules?.[String(i + 1)] || [];
-          return `<button type="button" class="tag button-tag tag-window" data-window-index="${i + 1}" data-link="${encodeAttr(r.windows?.[i]?.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${w.start}-${w.end}</button>`;
+          const start = w?.start || "--:--";
+          const end = w?.end || "--:--";
+          return `<button type="button" class="tag button-tag tag-window" data-window-index="${i + 1}" data-link="${encodeAttr(r.windows?.[i]?.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="Window ${i + 1}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">W${i + 1} ${start}-${end}</button>`;
         })
         .join("");
       const additionalTagConfig = {
