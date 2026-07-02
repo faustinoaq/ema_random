@@ -62,6 +62,7 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 PROMPT_DISPATCH_INTERVAL_SECONDS = max(15, int(os.getenv("PROMPT_DISPATCH_INTERVAL_SECONDS", "30")))
+FIXED_END_OF_DAY_TIME = "20:30"
 
 SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_1": "window_1",
@@ -366,7 +367,8 @@ def validate_additional_daily_surveys(payload: StudyIn) -> None:
             detail="additional_surveys must include end_of_day and dry_blood_spot",
         )
     for survey in payload.additional_surveys:
-        validate_hhmm(survey.time, f"{survey.survey_type} time")
+        if survey.survey_type == "dry_blood_spot":
+            validate_hhmm(survey.time, f"{survey.survey_type} time")
         if not str(survey.link).strip():
             raise HTTPException(
                 status_code=400,
@@ -385,6 +387,16 @@ def study_date_range(study_row) -> list[date]:
 def scheduled_datetime_for_day_time(day: date, hhmm: str) -> datetime:
     validate_hhmm(hhmm, "additional survey time")
     return datetime.fromisoformat(f"{day.isoformat()}T{hhmm}:00").replace(tzinfo=LOCAL_TZ)
+
+
+def normalize_additional_surveys(additional_surveys: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for survey in additional_surveys:
+        item = dict(survey)
+        if item.get("survey_type") == "end_of_day":
+            item["time"] = FIXED_END_OF_DAY_TIME
+        normalized.append(item)
+    return normalized
 
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
@@ -479,6 +491,8 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
         for survey in additional_surveys:
             survey_type = (survey.get("survey_type") or "").strip()
             time_hhmm = (survey.get("time") or "").strip()
+            if survey_type == "end_of_day":
+                time_hhmm = FIXED_END_OF_DAY_TIME
             survey_link = (survey.get("link") or "").strip()
             prompt_index = survey_index_map.get(survey_type)
             if not prompt_index:
@@ -873,7 +887,9 @@ def list_studies():
     for row in rows:
         item = dict(row)
         item["windows"] = json.loads(item.pop("windows_json"))
-        item["additional_surveys"] = json.loads(item.pop("additional_surveys_json") or "[]")
+        item["additional_surveys"] = normalize_additional_surveys(
+            json.loads(item.pop("additional_surveys_json") or "[]")
+        )
         schedules = conn.execute(
             """
             WITH localized_prompts AS (
@@ -958,7 +974,11 @@ def create_study(payload: StudyIn):
             json.dumps([{"start": w.start, "end": w.end, "link": str(w.link)} for w in payload.windows]),
             json.dumps(
                 [
-                    {"survey_type": s.survey_type, "time": s.time, "link": str(s.link)}
+                    {
+                        "survey_type": s.survey_type,
+                        "time": FIXED_END_OF_DAY_TIME if s.survey_type == "end_of_day" else s.time,
+                        "link": str(s.link),
+                    }
                     for s in payload.additional_surveys
                 ]
             ),
@@ -978,7 +998,9 @@ def create_study(payload: StudyIn):
     conn.close()
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
-    result["additional_surveys"] = json.loads(result.pop("additional_surveys_json") or "[]")
+    result["additional_surveys"] = normalize_additional_surveys(
+        json.loads(result.pop("additional_surveys_json") or "[]")
+    )
     return result
 
 
@@ -1013,7 +1035,11 @@ def update_study(study_id: int, payload: StudyIn):
             json.dumps([{"start": w.start, "end": w.end, "link": str(w.link)} for w in payload.windows]),
             json.dumps(
                 [
-                    {"survey_type": s.survey_type, "time": s.time, "link": str(s.link)}
+                    {
+                        "survey_type": s.survey_type,
+                        "time": FIXED_END_OF_DAY_TIME if s.survey_type == "end_of_day" else s.time,
+                        "link": str(s.link),
+                    }
                     for s in payload.additional_surveys
                 ]
             ),
@@ -1028,7 +1054,9 @@ def update_study(study_id: int, payload: StudyIn):
     log_event("study_updated", f"id={study_id}")
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
-    result["additional_surveys"] = json.loads(result.pop("additional_surveys_json") or "[]")
+    result["additional_surveys"] = normalize_additional_surveys(
+        json.loads(result.pop("additional_surveys_json") or "[]")
+    )
     return result
 
 
