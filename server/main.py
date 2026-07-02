@@ -1172,12 +1172,16 @@ def update_study(study_id: int, payload: StudyIn):
             study_id,
         ),
     )
-    conn.commit()
     row = conn.execute("SELECT * FROM studies WHERE id = %s", (study_id,)).fetchone()
-    conn.close()
     if updated.rowcount == 0 or not row:
+        conn.close()
         raise HTTPException(status_code=404, detail="Study not found")
+
+    generated = regenerate_study_schedule(conn, row, overwrite_unsent=True)
+    conn.commit()
+    conn.close()
     log_event("study_updated", f"id={study_id}")
+    log_event("schedule_generated", f"study_id={study_id} prompts_generated={generated}")
     result = dict(row)
     result["windows"] = json.loads(result.pop("windows_json"))
     result["additional_surveys"] = normalize_additional_surveys(
