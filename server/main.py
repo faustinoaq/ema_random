@@ -1243,15 +1243,43 @@ def dashboard():
                 """,
         (APP_TIMEZONE, APP_TIMEZONE),
         ).fetchone()["c"]
-    total_prompts = conn.execute("SELECT COUNT(*) c FROM prompts").fetchone()["c"]
-    sent_prompts = conn.execute("SELECT COUNT(*) c FROM prompts WHERE status='sent'").fetchone()["c"]
+    completed_studies = conn.execute(
+        """
+        SELECT COUNT(*) c
+        FROM (
+            SELECT
+                s.id,
+                s.prompts_per_day,
+                GREATEST((s.end_date::date - s.start_date::date + 1), 0) AS day_count,
+                jsonb_array_length(COALESCE(NULLIF(s.additional_surveys_json, ''), '[]')::jsonb) AS additional_count,
+                COALESCE(
+                    (
+                        SELECT COUNT(*)
+                        FROM prompts p
+                        WHERE p.participant_id = s.participant_id
+                          AND p.status = 'sent'
+                          AND (
+                              p.window_index BETWEEN 1 AND s.prompts_per_day
+                              OR p.window_index IN (5, 6)
+                          )
+                          AND (p.scheduled_time::timestamptz AT TIME ZONE %s)::date
+                              BETWEEN s.start_date::date AND s.end_date::date
+                    ),
+                    0
+                ) AS sent_count
+            FROM studies s
+        ) study_status
+        WHERE study_status.day_count > 0
+          AND study_status.sent_count >= study_status.day_count * (study_status.prompts_per_day + study_status.additional_count)
+        """,
+        (APP_TIMEZONE,),
+    ).fetchone()["c"]
     conn.close()
-    compliance = round((sent_prompts / total_prompts) * 100, 1) if total_prompts else 0.0
     return {
         "active_studies": active_studies,
         "participants_enrolled": participants,
         "messages_sent_today": sent_today,
-        "compliance_percent": compliance,
+        "completed_studies": completed_studies,
     }
 
 

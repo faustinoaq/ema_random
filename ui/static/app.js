@@ -795,7 +795,7 @@ async function loadDashboard() {
   document.getElementById("activeStudies").textContent = data.active_studies;
   document.getElementById("participants").textContent = data.participants_enrolled;
   document.getElementById("sentToday").textContent = data.messages_sent_today;
-  document.getElementById("compliance").textContent = `${data.compliance_percent}%`;
+  document.getElementById("completedStudies").textContent = data.completed_studies;
 }
 
 async function loadParticipants() {
