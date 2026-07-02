@@ -1232,7 +1232,7 @@ def manual_generate(participant_id: int):
 @app.get("/api/dashboard")
 def dashboard():
     conn = get_conn()
-    active_studies = conn.execute("SELECT COUNT(*) c FROM studies").fetchone()["c"]
+    total_studies = conn.execute("SELECT COUNT(*) c FROM studies").fetchone()["c"]
     participants = conn.execute("SELECT COUNT(*) c FROM participants WHERE status='active'").fetchone()["c"]
     sent_today = conn.execute(
         """
@@ -1274,6 +1274,7 @@ def dashboard():
         """,
         (APP_TIMEZONE,),
     ).fetchone()["c"]
+    active_studies = max(total_studies - completed_studies, 0)
     conn.close()
     return {
         "active_studies": active_studies,
