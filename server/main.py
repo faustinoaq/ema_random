@@ -62,6 +62,7 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 PROMPT_DISPATCH_INTERVAL_SECONDS = max(15, int(os.getenv("PROMPT_DISPATCH_INTERVAL_SECONDS", "30")))
+PROMPT_MAX_SEND_RETRIES = max(1, int(os.getenv("PROMPT_MAX_SEND_RETRIES", "3")))
 FIXED_END_OF_DAY_TIME = "20:30"
 
 SURVEY_TEMPLATE_KEYS = {
@@ -693,10 +694,11 @@ def claim_due_prompts(conn, limit: int = 50) -> list[dict]:
     rows = conn.execute(
         """
         WITH due AS (
-            SELECT p.id, pr.phone, pr.participant_id AS participant_code
+            SELECT p.id, pr.phone, pr.participant_id AS participant_code, p.retry_count
             FROM prompts p
             JOIN participants pr ON pr.id = p.participant_id
             WHERE p.status = 'scheduled'
+              AND p.retry_count < %s
               AND pr.status = 'active'
               AND p.scheduled_time::timestamptz <= CURRENT_TIMESTAMP
             ORDER BY p.scheduled_time::timestamptz, p.id
@@ -707,21 +709,31 @@ def claim_due_prompts(conn, limit: int = 50) -> list[dict]:
         SET status = 'sending'
         FROM due
         WHERE p.id = due.id
-        RETURNING p.id, p.participant_id, p.window_index, p.scheduled_time, p.survey_link, due.phone, due.participant_code
+        RETURNING p.id, p.participant_id, p.window_index, p.scheduled_time, p.survey_link, p.retry_count, due.phone, due.participant_code
         """,
-        (limit,),
+        (PROMPT_MAX_SEND_RETRIES, limit),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def mark_prompt_as_scheduled(prompt_id: int) -> None:
+def mark_prompt_send_failed(prompt_id: int) -> dict | None:
     conn = get_conn()
-    conn.execute(
-        "UPDATE prompts SET status = 'scheduled' WHERE id = %s AND status = 'sending'",
-        (prompt_id,),
-    )
+    row = conn.execute(
+        """
+        UPDATE prompts
+        SET retry_count = retry_count + 1,
+            status = CASE
+                WHEN retry_count + 1 >= %s THEN 'failed'
+                ELSE 'scheduled'
+            END
+        WHERE id = %s AND status = 'sending'
+        RETURNING retry_count, status
+        """,
+        (PROMPT_MAX_SEND_RETRIES, prompt_id),
+    ).fetchone()
     conn.commit()
     conn.close()
+    return dict(row) if row else None
 
 
 def mark_prompt_as_sent(prompt_id: int, sent_at: str) -> None:
@@ -840,19 +852,31 @@ def dispatch_due_prompts() -> int:
             send_sms_message(prompt["phone"], build_prompt_sms_body(prompt["survey_link"]))
         except HTTPException as exc:
             print(f"[prompt_dispatch] failed prompt_id={prompt_id}: {exc.detail}")
-            mark_prompt_as_scheduled(prompt_id)
-            log_event(
-                "prompt_send_failed",
-                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} detail={exc.detail}",
-            )
+            failure_state = mark_prompt_send_failed(prompt_id)
+            if failure_state and failure_state["status"] == "failed":
+                log_event(
+                    "prompt_send_failed_final",
+                    f"prompt_id={prompt_id} participant_id={prompt['participant_id']} retries={failure_state['retry_count']} detail={exc.detail}",
+                )
+            else:
+                log_event(
+                    "prompt_send_failed",
+                    f"prompt_id={prompt_id} participant_id={prompt['participant_id']} retries={failure_state['retry_count'] if failure_state else 'unknown'} detail={exc.detail}",
+                )
             continue
         except Exception as exc:
             print(f"[prompt_dispatch] failed prompt_id={prompt_id}: {exc}")
-            mark_prompt_as_scheduled(prompt_id)
-            log_event(
-                "prompt_send_failed",
-                f"prompt_id={prompt_id} participant_id={prompt['participant_id']} detail={exc}",
-            )
+            failure_state = mark_prompt_send_failed(prompt_id)
+            if failure_state and failure_state["status"] == "failed":
+                log_event(
+                    "prompt_send_failed_final",
+                    f"prompt_id={prompt_id} participant_id={prompt['participant_id']} retries={failure_state['retry_count']} detail={exc}",
+                )
+            else:
+                log_event(
+                    "prompt_send_failed",
+                    f"prompt_id={prompt_id} participant_id={prompt['participant_id']} retries={failure_state['retry_count'] if failure_state else 'unknown'} detail={exc}",
+                )
             continue
 
         sent_at = datetime.now(LOCAL_TZ).isoformat()

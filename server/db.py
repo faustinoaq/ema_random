@@ -73,8 +73,16 @@ def init_db() -> None:
             scheduled_time TEXT NOT NULL,
             sent_time TEXT,
             status TEXT NOT NULL DEFAULT 'scheduled',
+            retry_count INTEGER NOT NULL DEFAULT 0,
             survey_link TEXT
         )
+        """
+    )
+
+    cur.execute(
+        """
+        ALTER TABLE prompts
+        ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0
         """
     )
 

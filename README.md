@@ -87,7 +87,10 @@ POSTGRESQL_DATABASE=ema_random
 POSTGRESQL_SERVICE_HOST=your-postgres-host
 POSTGRESQL_SERVICE_PORT=5432
 PROMPT_DISPATCH_INTERVAL_SECONDS=30
+PROMPT_MAX_SEND_RETRIES=3
 ```
+
+`PROMPT_MAX_SEND_RETRIES` controls how many failed SMS send attempts a prompt can accumulate before it is marked `failed` and removed from the retry loop.
 
 ## Auth
 
