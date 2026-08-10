@@ -79,10 +79,10 @@ function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
 
   const intervalLength = intervalEnd.getTime() - intervalStart.getTime();
   const windowFractions = [
-    [0.05, 0.25],
-    [0.30, 0.50],
-    [0.55, 0.75],
-    [0.80, 0.98],
+    [0.00, 0.25],
+    [0.25, 0.50],
+    [0.50, 0.75],
+    [0.75, 1.00],
   ];
   const windows = [];
   for (const [startFraction, endFraction] of windowFractions) {
@@ -97,12 +97,8 @@ function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = FIXED_END
   if (!firstWindowStart) return "08:00";
 
   const firstWindowMinutes = parseTimeToMinutes(firstWindowStart, "09:00");
-  const eodMinutes = parseTimeToMinutes(eodTime, FIXED_END_OF_DAY_TIME);
-  const intervalEndMinutes = eodMinutes - 30;
-
-  // Inverse of: window1 = 0.95 * intervalStart + 0.05 * intervalEnd, where intervalStart = wake + 60.
-  const intervalStartMinutes = (firstWindowMinutes - 0.05 * intervalEndMinutes) / 0.95;
-  const wakeMinutes = intervalStartMinutes - 60;
+  // With 25/25/25/25 windows, window 1 starts exactly at intervalStart = wake + 60.
+  const wakeMinutes = firstWindowMinutes - 60;
   return formatMinutesToTime(wakeMinutes);
 }
 
