@@ -8,6 +8,7 @@ import secrets
 import time
 import threading
 import base64
+import urllib.error
 import urllib.parse
 import urllib.request
 import time as time_module
@@ -297,9 +298,14 @@ def send_sms_message(to_number: str, body: str) -> None:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as res:
-        if res.status >= 300:
-            raise HTTPException(status_code=502, detail="Twilio SMS send failed")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            if res.status >= 300:
+                raise HTTPException(status_code=502, detail="Twilio SMS send failed")
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Twilio SMS send failed: {exc.reason}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Twilio SMS send failed: {exc}") from exc
 
 
 def prompt_delivery_enabled() -> bool:
@@ -1006,20 +1012,30 @@ class SmsPayload(BaseModel):
 
 @app.post("/api/participants/{participant_id}/sms")
 def send_participant_sms(participant_id: int, payload: SmsPayload):
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT participant_id, phone FROM participants WHERE id = %s",
-        (participant_id,),
-    ).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Participant not found")
-    message_body = payload.body.strip()
-    if not message_body:
-        raise HTTPException(status_code=400, detail="Message body is required")
-    send_sms_message(row["phone"], message_body)
-    log_event("sms_sent", f"participant_id={participant_id}")
-    return {"ok": True}
+    conn = None
+    try:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT participant_id, phone FROM participants WHERE id = %s",
+            (participant_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Participant not found")
+        message_body = payload.body.strip()
+        if not message_body:
+            raise HTTPException(status_code=400, detail="Message body is required")
+        send_sms_message(row["phone"], message_body)
+        log_event("sms_sent", f"participant_id={participant_id}")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Unexpected server error while sending SMS: {exc}") from exc
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 @app.get("/api/studies")

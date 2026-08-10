@@ -20,9 +20,16 @@ def _db_config() -> dict[str, str]:
 
 def get_conn() -> psycopg.Connection:
     cfg = _db_config()
-    if not cfg["host"]:
-        raise RuntimeError("POSTGRESQL_SERVICE_HOST is not set")
-    conn = psycopg.connect(**cfg, row_factory=dict_row)
+    missing = [key for key in ("dbname", "user", "password", "host") if not cfg[key]]
+    if missing:
+        raise RuntimeError(
+            "Database configuration is incomplete. Set POSTGRESQL_DATABASE, POSTGRESQL_USER, "
+            "POSTGRESQL_PASSWORD, and POSTGRESQL_SERVICE_HOST."
+        )
+    try:
+        conn = psycopg.connect(**cfg, row_factory=dict_row)
+    except Exception as exc:
+        raise RuntimeError(f"Could not connect to PostgreSQL: {exc}") from exc
     return conn
 
 
