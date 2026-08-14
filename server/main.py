@@ -1233,12 +1233,20 @@ def update_study(study_id: int, payload: StudyIn):
 @app.delete("/api/studies/{study_id}")
 def delete_study(study_id: int):
     conn = get_conn()
-    deleted = conn.execute("DELETE FROM studies WHERE id = %s", (study_id,))
+    study = conn.execute(
+        "SELECT participant_id FROM studies WHERE id = %s", (study_id,)
+    ).fetchone()
+    if study is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Study not found")
+    cancelled = conn.execute(
+        "UPDATE prompts SET status = 'cancelled' WHERE participant_id = %s AND status = 'scheduled'",
+        (study["participant_id"],),
+    )
+    conn.execute("DELETE FROM studies WHERE id = %s", (study_id,))
     conn.commit()
     conn.close()
-    if deleted.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Study not found")
-    log_event("study_deleted", f"id={study_id}")
+    log_event("study_deleted", f"id={study_id} cancelled_prompts={cancelled.rowcount}")
     return {"ok": True}
 
 
