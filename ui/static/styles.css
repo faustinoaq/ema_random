@@ -612,18 +612,21 @@ li {
   box-shadow: 0 0 0 2px rgba(149, 179, 219, 0.25);
 }
 
+#openMorningLinkBtn,
 #openEodLinkBtn,
 #openDbsLinkBtn {
   background: #fff;
   border-color: var(--border);
 }
 
+#openMorningLinkBtn.pending,
 #openEodLinkBtn.pending,
 #openDbsLinkBtn.pending {
   border-color: #95b3db;
   box-shadow: 0 0 0 2px rgba(149, 179, 219, 0.25);
 }
 
+#openMorningLinkBtn.filled,
 #openEodLinkBtn.filled,
 #openDbsLinkBtn.filled {
   border-color: #9fc9b4;
@@ -631,6 +634,7 @@ li {
 }
 
 .study-window-list .window-badge.just-filled,
+#openMorningLinkBtn.just-filled,
 #openEodLinkBtn.just-filled,
 #openDbsLinkBtn.just-filled {
   animation: saved-link-pop 220ms ease-out;
