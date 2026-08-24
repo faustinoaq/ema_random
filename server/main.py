@@ -1099,8 +1099,12 @@ def list_studies():
             )
         item["window_schedules"] = by_window
 
-        additional_schedule_labels = {5: "end_of_day", 6: "dry_blood_spot"}
-        additional_schedules: dict[str, list[dict]] = {"end_of_day": [], "dry_blood_spot": []}
+        additional_schedule_labels = {5: "end_of_day", 6: "dry_blood_spot", 7: "morning"}
+        additional_schedules: dict[str, list[dict]] = {
+            "morning": [],
+            "end_of_day": [],
+            "dry_blood_spot": [],
+        }
         for s in schedules:
             label = additional_schedule_labels.get(s["window_index"])
             if not label:
