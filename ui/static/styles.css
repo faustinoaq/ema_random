@@ -490,6 +490,12 @@ li {
   color: #334a96;
 }
 
+.tag.tag-morning {
+  border-color: #b7b3e6;
+  background: #f1effd;
+  color: #5648a3;
+}
+
 .tag.tag-eod {
   border-color: #9fc9b4;
   background: #eaf7f0;

@@ -71,6 +71,7 @@ SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_2": "window_2",
     "survey_template_window_3": "window_3",
     "survey_template_window_4": "window_4",
+    "survey_template_morning": "morning",
     "survey_template_end_of_day": "end_of_day",
     "survey_template_dry_blood_spot": "dry_blood_spot",
 }
@@ -80,6 +81,7 @@ DEFAULT_SURVEY_TEMPLATES = {
     "survey_template_window_2": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
     "survey_template_window_3": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
     "survey_template_window_4": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
+    "survey_template_morning": "https://unc.az1.qualtrics.com/jfe/form/SV_3w7AgzHpYEYgbUG",
     "survey_template_end_of_day": "https://unc.az1.qualtrics.com/jfe/form/SV_9Hr3krARf8PC3KS",
     "survey_template_dry_blood_spot": "https://unc.az1.qualtrics.com/jfe/form/SV_b47bAEoLoUNCi8e",
 }
@@ -95,6 +97,7 @@ class SurveyTemplatesPayload(BaseModel):
     window_2: HttpUrl
     window_3: HttpUrl
     window_4: HttpUrl
+    morning: HttpUrl
     end_of_day: HttpUrl
     dry_blood_spot: HttpUrl
 
@@ -186,6 +189,7 @@ def update_survey_template_settings(payload: SurveyTemplatesPayload):
     upsert_setting(conn, "survey_template_window_2", str(payload.window_2))
     upsert_setting(conn, "survey_template_window_3", str(payload.window_3))
     upsert_setting(conn, "survey_template_window_4", str(payload.window_4))
+    upsert_setting(conn, "survey_template_morning", str(payload.morning))
     upsert_setting(conn, "survey_template_end_of_day", str(payload.end_of_day))
     upsert_setting(conn, "survey_template_dry_blood_spot", str(payload.dry_blood_spot))
     conn.commit()
@@ -245,6 +249,7 @@ def get_survey_templates(conn) -> dict[str, str]:
         "window_2": DEFAULT_SURVEY_TEMPLATES["survey_template_window_2"],
         "window_3": DEFAULT_SURVEY_TEMPLATES["survey_template_window_3"],
         "window_4": DEFAULT_SURVEY_TEMPLATES["survey_template_window_4"],
+        "morning": DEFAULT_SURVEY_TEMPLATES["survey_template_morning"],
         "end_of_day": DEFAULT_SURVEY_TEMPLATES["survey_template_end_of_day"],
         "dry_blood_spot": DEFAULT_SURVEY_TEMPLATES["survey_template_dry_blood_spot"],
     }
@@ -468,15 +473,15 @@ def validate_hhmm(value: str, label: str) -> None:
 
 
 def validate_additional_daily_surveys(payload: StudyIn) -> None:
-    expected_types = {"end_of_day", "dry_blood_spot"}
+    expected_types = {"morning", "end_of_day", "dry_blood_spot"}
     provided_types = {item.survey_type for item in payload.additional_surveys}
     if provided_types != expected_types:
         raise HTTPException(
             status_code=400,
-            detail="additional_surveys must include end_of_day and dry_blood_spot",
+            detail="additional_surveys must include morning, end_of_day and dry_blood_spot",
         )
     for survey in payload.additional_surveys:
-        if survey.survey_type == "dry_blood_spot":
+        if survey.survey_type in {"morning", "dry_blood_spot"}:
             validate_hhmm(survey.time, f"{survey.survey_type} time")
         if not str(survey.link).strip():
             raise HTTPException(
@@ -537,7 +542,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
         return 0
 
     additional_surveys = json.loads(study_row.get("additional_surveys_json") or "[]")
-    survey_index_map = {"end_of_day": 5, "dry_blood_spot": 6}
+    survey_index_map = {"morning": 7, "end_of_day": 5, "dry_blood_spot": 6}
 
     scheduled_count = 0
     for day in days:

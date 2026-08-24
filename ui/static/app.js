@@ -27,8 +27,8 @@ const windowTimes = {
   3: { start: "14:00", end: "16:00" },
   4: { start: "16:30", end: "19:30" },
 };
-const additionalSurveyLinks = { end_of_day: "", dry_blood_spot: "" };
-const savedAdditionalSurveyStates = { end_of_day: false, dry_blood_spot: false };
+const additionalSurveyLinks = { morning: "", end_of_day: "", dry_blood_spot: "" };
+const savedAdditionalSurveyStates = { morning: false, end_of_day: false, dry_blood_spot: false };
 let activeWindow = null;
 let activeAdditionalSurveyType = "";
 
@@ -206,10 +206,12 @@ const templateWindow1 = document.getElementById("templateWindow1");
 const templateWindow2 = document.getElementById("templateWindow2");
 const templateWindow3 = document.getElementById("templateWindow3");
 const templateWindow4 = document.getElementById("templateWindow4");
+const templateMorning = document.getElementById("templateMorning");
 const templateEod = document.getElementById("templateEod");
 const templateDbs = document.getElementById("templateDbs");
 const eodSurveyTimeInput = document.getElementById("eodSurveyTime");
 const dbsSurveyTimeInput = document.getElementById("dbsSurveyTime");
+const openMorningLinkBtn = document.getElementById("openMorningLinkBtn");
 const openEodLinkBtn = document.getElementById("openEodLinkBtn");
 const openDbsLinkBtn = document.getElementById("openDbsLinkBtn");
 const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
@@ -224,6 +226,7 @@ let surveyTemplateDefaults = {
   window_2: "",
   window_3: "",
   window_4: "",
+  morning: "",
   end_of_day: "",
   dry_blood_spot: "",
 };
@@ -258,6 +261,7 @@ function clearSavedStudyLinkStates() {
   for (let i = 1; i <= 4; i += 1) {
     savedWindowLinkStates[i] = false;
   }
+  savedAdditionalSurveyStates.morning = false;
   savedAdditionalSurveyStates.end_of_day = false;
   savedAdditionalSurveyStates.dry_blood_spot = false;
 }
@@ -294,6 +298,13 @@ function updateStudyLinkButtonStates() {
       playJustFilledAnimation(btn);
     }
   });
+  const wasMorningSaved = openMorningLinkBtn?.classList.contains("filled");
+  const isMorningSaved = Boolean(savedAdditionalSurveyStates.morning);
+  openMorningLinkBtn?.classList.toggle("filled", isMorningSaved);
+  if (isMorningSaved && !wasMorningSaved) {
+    playJustFilledAnimation(openMorningLinkBtn);
+  }
+
   const wasEodSaved = openEodLinkBtn.classList.contains("filled");
   const isEodSaved = Boolean(savedAdditionalSurveyStates.end_of_day);
   openEodLinkBtn.classList.toggle("filled", isEodSaved);
@@ -311,6 +322,7 @@ function updateStudyLinkButtonStates() {
 
 function clearPendingLinkSelection() {
   windowBadges.forEach((btn) => btn.classList.remove("pending"));
+  openMorningLinkBtn?.classList.remove("pending");
   openEodLinkBtn.classList.remove("pending");
   openDbsLinkBtn.classList.remove("pending");
 }
@@ -320,6 +332,10 @@ function setPendingLinkSelection() {
   if (activeWindow) {
     const activeBadge = windowBadges.find((btn) => Number(btn.dataset.window) === activeWindow);
     activeBadge?.classList.add("pending");
+    return;
+  }
+  if (activeAdditionalSurveyType === "morning") {
+    openMorningLinkBtn?.classList.add("pending");
     return;
   }
   if (activeAdditionalSurveyType === "end_of_day") {
@@ -475,6 +491,9 @@ function getWindowRawLink(windowNumber) {
 }
 
 function getAdditionalSurveyRawLink(surveyType) {
+  if (surveyType === "morning") {
+    return stripPidFromUrl(additionalSurveyLinks.morning || surveyTemplateDefaults.morning || "");
+  }
   if (surveyType === "end_of_day") {
     return stripPidFromUrl(additionalSurveyLinks.end_of_day || surveyTemplateDefaults.end_of_day || "");
   }
@@ -519,8 +538,12 @@ function openAdditionalSurveyLinkEditor(surveyType) {
   activeWindow = null;
   activeAdditionalSurveyType = surveyType;
   setPendingLinkSelection();
-  const title = surveyType === "end_of_day" ? "Set Link for EOD Survey" : "Set Link for DBS Survey";
-  openLinkModal(title, getAdditionalSurveyPreviewLink(surveyType), false);
+  const titles = {
+    morning: "Set Link for Morning Survey",
+    end_of_day: "Set Link for EOD Survey",
+    dry_blood_spot: "Set Link for DBS Survey",
+  };
+  openLinkModal(titles[surveyType] || "Set Link for Survey", getAdditionalSurveyPreviewLink(surveyType), false);
 }
 
 function escapeCsv(value) {
@@ -609,6 +632,7 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   enforceFixedEodTime();
   dbsSurveyTimeInput.value = "19:30";
   refreshStudyWindowLabels("08:00", FIXED_END_OF_DAY_TIME);
+  additionalSurveyLinks.morning = "";
   additionalSurveyLinks.end_of_day = "";
   additionalSurveyLinks.dry_blood_spot = "";
   applySurveyTemplateDefaultsToStudy();
@@ -618,6 +642,10 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("studyModalTitle").textContent = "Save Study";
   studySubmitBtn.textContent = "Save";
   openStudyModal();
+});
+
+openMorningLinkBtn?.addEventListener("click", () => {
+  openAdditionalSurveyLinkEditor("morning");
 });
 
 openEodLinkBtn.addEventListener("click", () => {
@@ -650,6 +678,7 @@ surveyTemplateForm.addEventListener("submit", async (e) => {
       window_2: templateWindow2.value.trim(),
       window_3: templateWindow3.value.trim(),
       window_4: templateWindow4.value.trim(),
+      morning: templateMorning.value.trim(),
       end_of_day: templateEod.value.trim(),
       dry_blood_spot: templateDbs.value.trim(),
     };
@@ -813,6 +842,7 @@ async function loadSurveyTemplates() {
   templateWindow2.value = data.window_2 || "";
   templateWindow3.value = data.window_3 || "";
   templateWindow4.value = data.window_4 || "";
+  templateMorning.value = data.morning || "";
   templateEod.value = data.end_of_day || "";
   templateDbs.value = data.dry_blood_spot || "";
   refreshAdditionalSurveyPreviewLinks();
@@ -938,6 +968,7 @@ async function loadStudies() {
         })
         .join("");
       const additionalTagConfig = {
+        morning: { short: "M", label: "Morning Survey", className: "tag-morning" },
         end_of_day: { short: "EOD", label: "End of Day Survey", className: "tag-eod" },
         dry_blood_spot: { short: "DBS", label: "Dry Blood Spot Survey", className: "tag-dbs" },
       };
@@ -994,11 +1025,13 @@ async function loadStudies() {
         study.windows?.[0]?.start || "09:00",
         FIXED_END_OF_DAY_TIME
       );
+      const morningSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "morning");
       const eodSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
       const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
       eodSurveyTimeInput.value = eodSurvey?.time || FIXED_END_OF_DAY_TIME;
       enforceFixedEodTime();
       dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
+      additionalSurveyLinks.morning = stripPidFromUrl(morningSurvey?.link || "");
       additionalSurveyLinks.end_of_day = stripPidFromUrl(eodSurvey?.link || "");
       additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
       clearSavedStudyLinkStates();
@@ -1111,7 +1144,7 @@ function exportStudiesCsv() {
       }
     });
 
-    const dailyAdditionalTimes = { end_of_day: {}, dry_blood_spot: {} };
+    const dailyAdditionalTimes = { morning: {}, end_of_day: {}, dry_blood_spot: {} };
     const additionalSchedules = row.additional_schedules || {};
     ["end_of_day", "dry_blood_spot"].forEach((surveyType) => {
       (additionalSchedules[surveyType] || []).forEach((item) => {
@@ -1223,6 +1256,11 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     ],
     additional_surveys: [
       {
+        survey_type: "morning",
+        time: document.getElementById("studyWakeTime").value || "08:00",
+        link: getAdditionalSurveyRawLink("morning"),
+      },
+      {
         survey_type: "end_of_day",
         time: FIXED_END_OF_DAY_TIME,
         link: getAdditionalSurveyRawLink("end_of_day"),
@@ -1238,8 +1276,8 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     openMessageModal("Participant Required", "Please select a participant.");
     return;
   }
-  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link) {
-    openMessageModal("Missing Survey URLs", "Please set links for EOD and DBS surveys.");
+  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link || !payload.additional_surveys[2].link) {
+    openMessageModal("Missing Survey URLs", "Please set links for Morning, EOD and DBS surveys.");
     return;
   }
   try {
