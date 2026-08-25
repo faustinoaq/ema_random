@@ -70,7 +70,7 @@ function shiftTime(timeValue, minutesDelta, fallback = "08:00") {
 
 function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
   const intervalStart = parseTimeToDate(wakeTime, "08:00");
-  intervalStart.setMinutes(intervalStart.getMinutes() + 120);
+  intervalStart.setMinutes(intervalStart.getMinutes() + 60);
   const intervalEnd = parseTimeToDate(eodTime, "20:00");
   intervalEnd.setMinutes(intervalEnd.getMinutes() - 30);
   if (intervalEnd <= intervalStart) {
@@ -97,8 +97,8 @@ function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = FIXED_END
   if (!firstWindowStart) return "08:00";
 
   const firstWindowMinutes = parseTimeToMinutes(firstWindowStart, "09:00");
-  // With 25/25/25/25 windows, window 1 starts exactly at intervalStart = wake + 120.
-  const wakeMinutes = firstWindowMinutes - 120;
+  // With 25/25/25/25 windows, window 1 starts exactly at intervalStart = wake + 60.
+  const wakeMinutes = firstWindowMinutes - 60;
   return formatMinutesToTime(wakeMinutes);
 }
 
