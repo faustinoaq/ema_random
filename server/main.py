@@ -513,6 +513,19 @@ def normalize_additional_surveys(additional_surveys: list[dict]) -> list[dict]:
     return normalized
 
 
+def cancel_unsent_prompts(conn, participant_id: int) -> int:
+    result = conn.execute(
+        """
+        UPDATE prompts
+        SET status = 'cancelled'
+        WHERE participant_id = %s
+          AND status IN ('scheduled', 'sending')
+        """,
+        (participant_id,),
+    )
+    return result.rowcount
+
+
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
     participant = conn.execute(
         "SELECT id, participant_id FROM participants WHERE id = %s AND status = 'active'",
@@ -546,18 +559,11 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
 
     scheduled_count = 0
     skipped_same_day_past_count = 0
+    if overwrite_unsent:
+        cancel_unsent_prompts(conn, participant["id"])
+
     for day in days:
         now_local = datetime.now(LOCAL_TZ)
-        if overwrite_unsent:
-            conn.execute(
-                """
-                DELETE FROM prompts
-                WHERE participant_id = %s
-                                    AND (scheduled_time::timestamptz AT TIME ZONE %s)::date = %s
-                                    AND status = 'scheduled'
-                """,
-                                (participant["id"], APP_TIMEZONE, day.isoformat()),
-            )
 
         window_bounds = [
             window_bounds_for_day(day, window["start"], window["end"])
@@ -747,6 +753,26 @@ def claim_due_prompts(conn, limit: int = 50) -> list[dict]:
               AND p.retry_count < %s
               AND pr.status = 'active'
               AND p.scheduled_time::timestamptz <= CURRENT_TIMESTAMP
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM prompts earlier
+                  WHERE earlier.participant_id = p.participant_id
+                    AND earlier.window_index = p.window_index
+                    AND earlier.status = 'scheduled'
+                    AND earlier.scheduled_time::timestamptz <= CURRENT_TIMESTAMP
+                    AND (
+                        earlier.scheduled_time::timestamptz < p.scheduled_time::timestamptz
+                        OR (
+                            earlier.scheduled_time::timestamptz = p.scheduled_time::timestamptz
+                            AND earlier.id < p.id
+                        )
+                    )
+                    AND (
+                        earlier.scheduled_time::timestamptz AT TIME ZONE %s
+                    )::date = (
+                        p.scheduled_time::timestamptz AT TIME ZONE %s
+                    )::date
+              )
             ORDER BY p.scheduled_time::timestamptz, p.id
             FOR UPDATE SKIP LOCKED
             LIMIT %s
@@ -757,9 +783,19 @@ def claim_due_prompts(conn, limit: int = 50) -> list[dict]:
         WHERE p.id = due.id
         RETURNING p.id, p.participant_id, p.window_index, p.scheduled_time, p.survey_link, p.retry_count, due.phone, due.participant_code
         """,
-        (PROMPT_MAX_SEND_RETRIES, limit),
+        (PROMPT_MAX_SEND_RETRIES, APP_TIMEZONE, APP_TIMEZONE, limit),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def prompt_is_still_sending(prompt_id: int) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM prompts WHERE id = %s AND status = 'sending'",
+        (prompt_id,),
+    ).fetchone()
+    conn.close()
+    return row is not None
 
 
 def mark_prompt_send_failed(prompt_id: int) -> dict | None:
@@ -865,6 +901,9 @@ def dispatch_due_prompts() -> int:
     sent_count = 0
     for prompt in claimed_prompts:
         prompt_id = prompt["id"]
+        if not prompt_is_still_sending(prompt_id):
+            print(f"[prompt_dispatch] skipped cancelled prompt_id={prompt_id}")
+            continue
         prompt_day = (
             datetime.fromisoformat(str(prompt["scheduled_time"]).replace("Z", "+00:00"))
             .astimezone(LOCAL_TZ)
