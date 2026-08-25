@@ -1329,12 +1329,12 @@ def dashboard():
     sent_today = conn.execute(
         """
         SELECT COUNT(*) c
-        FROM prompts
-        WHERE status='sent'
-          AND (sent_time::timestamptz AT TIME ZONE %s)::date = (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
-                """,
+        FROM logs
+        WHERE event = 'prompt_sent'
+          AND (timestamp::timestamptz AT TIME ZONE %s)::date = (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+        """,
         (APP_TIMEZONE, APP_TIMEZONE),
-        ).fetchone()["c"]
+    ).fetchone()["c"]
     completed_studies = conn.execute(
         """
         SELECT COUNT(*) c
