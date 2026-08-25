@@ -545,7 +545,9 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
     survey_index_map = {"morning": 7, "end_of_day": 5, "dry_blood_spot": 6}
 
     scheduled_count = 0
+    skipped_same_day_past_count = 0
     for day in days:
+        now_local = datetime.now(LOCAL_TZ)
         if overwrite_unsent:
             conn.execute(
                 """
@@ -615,6 +617,19 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                 if existing:
                     continue
 
+            # Do not send old same-day prompts created after their intended time.
+            if scheduled_dt_obj.date() == now_local.date() and scheduled_dt_obj <= now_local:
+                full_link = append_pid_to_url(survey_link, participant_pid)
+                conn.execute(
+                    """
+                    INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
+                    VALUES (%s, %s, %s, 'skipped', %s)
+                    """,
+                    (participant["id"], idx + 1, scheduled_dt_obj.isoformat(), full_link),
+                )
+                skipped_same_day_past_count += 1
+                continue
+
             scheduled_dt = scheduled_dt_obj.isoformat()
             full_link = append_pid_to_url(survey_link, participant_pid)
             conn.execute(
@@ -668,10 +683,25 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                     continue
 
             try:
-                scheduled_dt = scheduled_datetime_for_day_time(day, time_hhmm).isoformat()
+                scheduled_dt_obj = scheduled_datetime_for_day_time(day, time_hhmm)
             except HTTPException:
                 log_event("schedule_skipped", f"study_id={study_row['id']} invalid {survey_type} time={time_hhmm}")
                 continue
+
+            # Do not send old same-day prompts created after their intended time.
+            if scheduled_dt_obj.date() == now_local.date() and scheduled_dt_obj <= now_local:
+                full_link = append_pid_to_url(survey_link, participant_pid)
+                conn.execute(
+                    """
+                    INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
+                    VALUES (%s, %s, %s, 'skipped', %s)
+                    """,
+                    (participant["id"], prompt_index, scheduled_dt_obj.isoformat(), full_link),
+                )
+                skipped_same_day_past_count += 1
+                continue
+
+            scheduled_dt = scheduled_dt_obj.isoformat()
 
             full_link = append_pid_to_url(survey_link, participant_pid)
             conn.execute(
@@ -683,6 +713,11 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
             )
             scheduled_count += 1
 
+    if skipped_same_day_past_count:
+        log_event(
+            "schedule_same_day_past_skipped",
+            f"study_id={study_row['id']} skipped={skipped_same_day_past_count}",
+        )
     return scheduled_count
 
 
