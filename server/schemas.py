@@ -24,8 +24,9 @@ class StudyWindow(BaseModel):
 
 class AdditionalDailySurvey(BaseModel):
     survey_type: str
-    time: str
-    link: HttpUrl
+    time: str | None = None
+    link: HttpUrl | None = None
+    message: str | None = None
 
 
 class StudyIn(BaseModel):

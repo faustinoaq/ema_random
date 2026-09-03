@@ -123,6 +123,11 @@
           <div class="daily-surveys study-daily-surveys">
             <h4>Additional Daily Surveys</h4>
             <div class="daily-survey-row">
+              <label>DBS Reminder</label>
+              <input id="dbsReminderTime" type="time" value="20:00" required />
+              <button id="openDbsReminderBtn" type="button" class="fit secondary">DBS Reminder</button>
+            </div>
+            <div class="daily-survey-row">
               <label for="eveningDiaryTime">Evening Diary Time</label>
               <input id="eveningDiaryTime" type="time" value="20:30" required />
               <button id="openEveningDiaryLinkBtn" type="button" class="fit secondary">Evening Diary</button>
@@ -141,7 +146,7 @@
       <div class="modal-card">
         <button id="closeWindowLinkModalX" type="button" class="modal-x" aria-label="Close">x</button>
         <h3 id="linkModalTitle">Set Window Link</h3>
-        <input id="windowLinkInput" type="url" placeholder="https://..." />
+        <textarea id="windowLinkInput" rows="4" placeholder="https://..."></textarea>
         <div id="windowScheduleBlock" class="window-schedule hidden">
           <strong>Scheduled Send Times</strong>
           <ul id="windowScheduleList"></ul>

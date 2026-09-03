@@ -26,8 +26,9 @@ const windowTimes = {
   3: { start: "14:00", end: "16:00" },
   4: { start: "16:30", end: "19:30" },
 };
-const additionalSurveyLinks = { morning: "", evening_diary: "" };
-const savedAdditionalSurveyStates = { morning: false, evening_diary: false };
+const additionalSurveyLinks = { morning: "", dbs_reminder: "", evening_diary: "" };
+const DBS_REMINDER_DEFAULT_MESSAGE = "Time to collect tonight's blood sample! Quick reminder: you only need to fill two circles on the card. Make sure to let the drops dry completely overnight in a safe spot!";
+const savedAdditionalSurveyStates = { morning: false, dbs_reminder: false, evening_diary: false };
 let activeWindow = null;
 let activeAdditionalSurveyType = "";
 
@@ -207,6 +208,8 @@ const templateWindow3 = document.getElementById("templateWindow3");
 const templateWindow4 = document.getElementById("templateWindow4");
 const templateMorning = document.getElementById("templateMorning");
 const templateEveningDiary = document.getElementById("templateEveningDiary");
+const dbsReminderTimeInput = document.getElementById("dbsReminderTime");
+const openDbsReminderBtn = document.getElementById("openDbsReminderBtn");
 const eveningDiaryTimeInput = document.getElementById("eveningDiaryTime");
 const openMorningLinkBtn = document.getElementById("openMorningLinkBtn");
 const openEveningDiaryLinkBtn = document.getElementById("openEveningDiaryLinkBtn");
@@ -252,6 +255,7 @@ function clearSavedStudyLinkStates() {
     savedWindowLinkStates[i] = false;
   }
   savedAdditionalSurveyStates.morning = false;
+  savedAdditionalSurveyStates.dbs_reminder = false;
   savedAdditionalSurveyStates.evening_diary = false;
 }
 
@@ -300,11 +304,18 @@ function updateStudyLinkButtonStates() {
   if (isEveningDiarySaved && !wasEveningDiarySaved) {
     playJustFilledAnimation(openEveningDiaryLinkBtn);
   }
+  const wasDbsReminderSaved = openDbsReminderBtn?.classList.contains("filled");
+  const isDbsReminderSaved = Boolean(savedAdditionalSurveyStates.dbs_reminder);
+  openDbsReminderBtn?.classList.toggle("filled", isDbsReminderSaved);
+  if (isDbsReminderSaved && !wasDbsReminderSaved) {
+    playJustFilledAnimation(openDbsReminderBtn);
+  }
 }
 
 function clearPendingLinkSelection() {
   windowBadges.forEach((btn) => btn.classList.remove("pending"));
   openMorningLinkBtn?.classList.remove("pending");
+  openDbsReminderBtn?.classList.remove("pending");
   openEveningDiaryLinkBtn?.classList.remove("pending");
 }
 
@@ -321,6 +332,10 @@ function setPendingLinkSelection() {
   }
   if (activeAdditionalSurveyType === "evening_diary") {
     openEveningDiaryLinkBtn?.classList.add("pending");
+    return;
+  }
+  if (activeAdditionalSurveyType === "dbs_reminder") {
+    openDbsReminderBtn?.classList.add("pending");
   }
 }
 
@@ -514,9 +529,13 @@ function openAdditionalSurveyLinkEditor(surveyType) {
   setPendingLinkSelection();
   const titles = {
     morning: "Set Link for Morning Survey",
+    dbs_reminder: "Set Message for DBS Reminder",
     evening_diary: "Set Link for Evening Diary",
   };
-  openLinkModal(titles[surveyType] || "Set Link for Survey", getAdditionalSurveyPreviewLink(surveyType), false);
+  const value = surveyType === "dbs_reminder"
+    ? additionalSurveyLinks.dbs_reminder || DBS_REMINDER_DEFAULT_MESSAGE
+    : getAdditionalSurveyPreviewLink(surveyType);
+  openLinkModal(titles[surveyType] || "Set Link for Survey", value, false);
 }
 
 function escapeCsv(value) {
@@ -603,8 +622,10 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("studyWakeTime").value = "08:00";
   document.getElementById("promptsPerDay").value = 4;
   eveningDiaryTimeInput.value = "20:30";
+  dbsReminderTimeInput.value = "20:00";
   refreshStudyWindowLabels("08:00", eveningDiaryTimeInput.value);
   additionalSurveyLinks.morning = "";
+  additionalSurveyLinks.dbs_reminder = DBS_REMINDER_DEFAULT_MESSAGE;
   additionalSurveyLinks.evening_diary = "";
   applySurveyTemplateDefaultsToStudy();
   clearSavedStudyLinkStates();
@@ -617,6 +638,10 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
 
 openMorningLinkBtn?.addEventListener("click", () => {
   openAdditionalSurveyLinkEditor("morning");
+});
+
+openDbsReminderBtn?.addEventListener("click", () => {
+  openAdditionalSurveyLinkEditor("dbs_reminder");
 });
 
 openEveningDiaryLinkBtn.addEventListener("click", () => {
@@ -685,6 +710,17 @@ document.getElementById("confirmDeleteBtn").addEventListener("click", async () =
 document.getElementById("closeWindowLinkBtn").addEventListener("click", closeLinkModal);
 document.getElementById("saveWindowLinkBtn").addEventListener("click", () => {
   const value = windowLinkInput.value.trim();
+  if (activeAdditionalSurveyType === "dbs_reminder") {
+    if (!value) {
+      openMessageModal("Missing Message", "Please enter a message for the DBS reminder.");
+      return;
+    }
+    additionalSurveyLinks.dbs_reminder = value;
+    savedAdditionalSurveyStates.dbs_reminder = true;
+    updateStudyLinkButtonStates();
+    closeLinkModal();
+    return;
+  }
   if (!isValidHttpUrl(value)) {
     openMessageModal("Invalid Link", "Please enter a valid URL starting with http:// or https://");
     return;
@@ -934,6 +970,7 @@ async function loadStudies() {
         .join("");
       const additionalTagConfig = {
         morning: { short: "M", label: "Morning Survey", className: "tag-morning" },
+        dbs_reminder: { short: "DBS", label: "DBS Reminder", className: "tag-dbs" },
         evening_diary: { short: "ED", label: "Evening Diary", className: "tag-evening" },
       };
       const additionalTags = (r.additional_surveys || [])
@@ -941,7 +978,7 @@ async function loadStudies() {
           const cfg = additionalTagConfig[survey?.survey_type || ""];
           if (!cfg) return "";
           const schedule = r.additional_schedules?.[survey.survey_type] || [];
-          const timeLabel = survey?.time || "--:--";
+          const timeLabel = survey?.time || (survey?.survey_type === "dbs_reminder" ? "Random" : "--:--");
           return `<button type="button" class="tag button-tag ${cfg.className}" data-link="${encodeAttr(survey.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="${cfg.label}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">${cfg.short} ${timeLabel}</button>`;
         })
         .join("");
@@ -964,7 +1001,7 @@ async function loadStudies() {
       const rawLink = decodeURIComponent(btn.dataset.link || "");
       const participantPid = decodeURIComponent(btn.dataset.participantPid || "");
       const previewLink = getReadonlyWindowPreviewLink(rawLink, participantPid);
-      const link = previewLink || rawLink || "No link configured";
+      const link = btn.dataset.label === "DBS Reminder" ? "Message sent without a link" : previewLink || rawLink || "No link configured";
       let scheduleItems = [];
       try {
         scheduleItems = JSON.parse(decodeURIComponent(btn.dataset.schedule || "[]"));
@@ -990,9 +1027,12 @@ async function loadStudies() {
         "20:30"
       );
       const morningSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "morning");
+      const dbsReminder = (study.additional_surveys || []).find((s) => s?.survey_type === "dbs_reminder");
       const eveningDiarySurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "evening_diary");
+      dbsReminderTimeInput.value = dbsReminder?.time || "20:00";
       eveningDiaryTimeInput.value = eveningDiarySurvey?.time || "20:30";
       additionalSurveyLinks.morning = stripPidFromUrl(morningSurvey?.link || "");
+      additionalSurveyLinks.dbs_reminder = dbsReminder?.message || DBS_REMINDER_DEFAULT_MESSAGE;
       additionalSurveyLinks.evening_diary = stripPidFromUrl(eveningDiarySurvey?.link || "");
       clearSavedStudyLinkStates();
       for (let i = 1; i <= 4; i += 1) {
@@ -1104,9 +1144,9 @@ function exportStudiesCsv() {
       }
     });
 
-    const dailyAdditionalTimes = { morning: {}, evening_diary: {} };
+    const dailyAdditionalTimes = { dbs_reminder: {}, morning: {}, evening_diary: {} };
     const additionalSchedules = row.additional_schedules || {};
-    ["evening_diary"].forEach((surveyType) => {
+    ["dbs_reminder", "evening_diary"].forEach((surveyType) => {
       (additionalSchedules[surveyType] || []).forEach((item) => {
         if (!item?.date || !item?.time) return;
         if (!dailyAdditionalTimes[surveyType][item.date]) {
@@ -1132,6 +1172,7 @@ function exportStudiesCsv() {
         dailyWindowTimeByIndex["2"]?.[studyDate] || windowRangeByIndex["2"] || "",
         dailyWindowTimeByIndex["3"]?.[studyDate] || windowRangeByIndex["3"] || "",
         dailyWindowTimeByIndex["4"]?.[studyDate] || windowRangeByIndex["4"] || "",
+        dailyAdditionalTimes.dbs_reminder[studyDate] || "",
         dailyAdditionalTimes.evening_diary[studyDate] || additionalSurveyTimes.evening_diary || "",
         comments,
       ]);
@@ -1153,6 +1194,7 @@ function exportStudiesCsv() {
       "Window_2_Time",
       "Window_3_Time",
       "Window_4_Time",
+      "DBS_Reminder_Time",
       "Evening_Diary_Time",
       "Comments",
     ],
@@ -1217,6 +1259,11 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
         time: document.getElementById("studyWakeTime").value || "08:00",
         link: getAdditionalSurveyRawLink("morning"),
       },
+        {
+          survey_type: "dbs_reminder",
+          time: dbsReminderTimeInput.value || "20:00",
+          message: additionalSurveyLinks.dbs_reminder.trim(),
+        },
       {
         survey_type: "evening_diary",
         time: eveningDiaryTime,
@@ -1228,7 +1275,7 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     openMessageModal("Participant Required", "Please select a participant.");
     return;
   }
-  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link) {
+  if (!payload.additional_surveys[0].link || !payload.additional_surveys[2].link) {
     openMessageModal("Missing Survey URLs", "Please set links for Morning and Evening Diary surveys.");
     return;
   }

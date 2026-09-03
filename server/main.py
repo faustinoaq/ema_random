@@ -64,6 +64,10 @@ TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 PROMPT_DISPATCH_INTERVAL_SECONDS = max(15, int(os.getenv("PROMPT_DISPATCH_INTERVAL_SECONDS", "30")))
 PROMPT_MAX_SEND_RETRIES = max(1, int(os.getenv("PROMPT_MAX_SEND_RETRIES", "3")))
+DBS_REMINDER_MESSAGE = (
+    "Time to collect tonight's blood sample! Quick reminder: you only need to fill two circles "
+    "on the card. Make sure to let the drops dry completely overnight in a safe spot!"
+)
 
 SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_1": "window_1",
@@ -315,7 +319,9 @@ def prompt_delivery_enabled() -> bool:
     return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and (TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID))
 
 
-def build_prompt_sms_body(survey_link: str) -> str:
+def build_prompt_sms_body(survey_link: str, window_index: int | None = None) -> str:
+    if window_index == 6:
+        return survey_link
     return f"Please complete your survey: {survey_link}"
 
 
@@ -471,17 +477,21 @@ def validate_hhmm(value: str, label: str) -> None:
 
 
 def validate_additional_daily_surveys(payload: StudyIn) -> None:
-    expected_types = {"morning", "evening_diary"}
+    expected_types = {"morning", "dbs_reminder", "evening_diary"}
     provided_types = {item.survey_type for item in payload.additional_surveys}
     if provided_types != expected_types:
         raise HTTPException(
             status_code=400,
-            detail="additional_surveys must include morning and evening_diary",
+            detail="additional_surveys must include morning, dbs_reminder, and evening_diary",
         )
     for survey in payload.additional_surveys:
-        if survey.survey_type in expected_types:
+        if survey.survey_type in {"morning", "dbs_reminder", "evening_diary"}:
             validate_hhmm(survey.time, f"{survey.survey_type} time")
-        if not str(survey.link).strip():
+        if survey.survey_type == "dbs_reminder":
+            if not (survey.message or "").strip():
+                raise HTTPException(status_code=400, detail="DBS reminder message is required")
+            continue
+        if not survey.link:
             raise HTTPException(
                 status_code=400,
                 detail=f"{survey.survey_type} link is required",
@@ -509,7 +519,7 @@ def normalize_additional_surveys(additional_surveys: list[dict]) -> list[dict]:
         if item.get("survey_type") == "end_of_day" and not has_evening_diary:
             item["survey_type"] = "evening_diary"
         normalized.append(item)
-    return [item for item in normalized if item.get("survey_type") not in {"end_of_day", "dry_blood_spot"}]
+    return [item for item in normalized if item.get("survey_type") != "end_of_day"]
 
 
 def cancel_unsent_prompts(conn, participant_id: int) -> int:
@@ -554,7 +564,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
         return 0
 
     additional_surveys = json.loads(study_row.get("additional_surveys_json") or "[]")
-    survey_index_map = {"evening_diary": 5, "end_of_day": 5, "morning": 7}
+    survey_index_map = {"evening_diary": 5, "end_of_day": 5, "dbs_reminder": 6, "morning": 7}
 
     scheduled_count = 0
     skipped_same_day_past_count = 0
@@ -624,7 +634,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
 
             # Do not send old same-day prompts created after their intended time.
             if scheduled_dt_obj.date() == now_local.date() and scheduled_dt_obj <= now_local:
-                full_link = append_pid_to_url(survey_link, participant_pid)
+                full_link = append_pid_to_url(survey_link, participant_pid) if survey_type != "dbs_reminder" else survey_link
                 conn.execute(
                     """
                     INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
@@ -650,10 +660,15 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
             survey_type = (survey.get("survey_type") or "").strip()
             time_hhmm = (survey.get("time") or "").strip()
             survey_link = (survey.get("link") or "").strip()
+            survey_message = (survey.get("message") or "").strip()
             prompt_index = survey_index_map.get(survey_type)
             if not prompt_index:
                 continue
-            if not survey_link or not time_hhmm:
+            if survey_type == "dbs_reminder":
+                survey_link = survey_message
+                if not survey_link:
+                    log_event("schedule_skipped", f"study_id={study_row['id']} missing {survey_type} message")
+            elif not survey_link or not time_hhmm:
                 log_event("schedule_skipped", f"study_id={study_row['id']} missing {survey_type} link/time")
                 continue
 
@@ -706,7 +721,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
 
             scheduled_dt = scheduled_dt_obj.isoformat()
 
-            full_link = append_pid_to_url(survey_link, participant_pid)
+            full_link = append_pid_to_url(survey_link, participant_pid) if survey_type != "dbs_reminder" else survey_link
             conn.execute(
                 """
                 INSERT INTO prompts (participant_id, window_index, scheduled_time, status, survey_link)
@@ -931,7 +946,7 @@ def dispatch_due_prompts() -> int:
             f"scheduled_time={prompt['scheduled_time']} phone={prompt['phone']}"
         )
         try:
-            send_sms_message(prompt["phone"], build_prompt_sms_body(prompt["survey_link"]))
+            send_sms_message(prompt["phone"], build_prompt_sms_body(prompt["survey_link"], prompt["window_index"]))
         except HTTPException as exc:
             print(f"[prompt_dispatch] failed prompt_id={prompt_id}: {exc.detail}")
             failure_state = mark_prompt_send_failed(prompt_id)
@@ -1170,9 +1185,10 @@ def list_studies():
             )
         item["window_schedules"] = by_window
 
-        additional_schedule_labels = {5: "evening_diary", 7: "morning"}
+        additional_schedule_labels = {5: "evening_diary", 6: "dbs_reminder", 7: "morning"}
         additional_schedules: dict[str, list[dict]] = {
             "morning": [],
+            "dbs_reminder": [],
             "evening_diary": [],
         }
         for s in schedules:
@@ -1222,7 +1238,8 @@ def create_study(payload: StudyIn):
                     {
                         "survey_type": s.survey_type,
                         "time": s.time,
-                        "link": str(s.link),
+                        "link": str(s.link) if s.link else None,
+                        "message": s.message,
                     }
                     for s in payload.additional_surveys
                 ]
@@ -1283,7 +1300,8 @@ def update_study(study_id: int, payload: StudyIn):
                     {
                         "survey_type": s.survey_type,
                         "time": s.time,
-                        "link": str(s.link),
+                        "link": str(s.link) if s.link else None,
+                        "message": s.message,
                     }
                     for s in payload.additional_surveys
                 ]
