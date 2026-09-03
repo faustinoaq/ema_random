@@ -64,7 +64,6 @@ TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 PROMPT_DISPATCH_INTERVAL_SECONDS = max(15, int(os.getenv("PROMPT_DISPATCH_INTERVAL_SECONDS", "30")))
 PROMPT_MAX_SEND_RETRIES = max(1, int(os.getenv("PROMPT_MAX_SEND_RETRIES", "3")))
-FIXED_END_OF_DAY_TIME = "20:30"
 
 SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_1": "window_1",
@@ -72,8 +71,7 @@ SURVEY_TEMPLATE_KEYS = {
     "survey_template_window_3": "window_3",
     "survey_template_window_4": "window_4",
     "survey_template_morning": "morning",
-    "survey_template_end_of_day": "end_of_day",
-    "survey_template_dry_blood_spot": "dry_blood_spot",
+    "survey_template_evening_diary": "evening_diary",
 }
 
 DEFAULT_SURVEY_TEMPLATES = {
@@ -82,8 +80,7 @@ DEFAULT_SURVEY_TEMPLATES = {
     "survey_template_window_3": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
     "survey_template_window_4": "https://unc.az1.qualtrics.com/jfe/form/SV_39nceO5WzEeTsKG",
     "survey_template_morning": "https://unc.az1.qualtrics.com/jfe/form/SV_3w7AgzHpYEYgbUG",
-    "survey_template_end_of_day": "https://unc.az1.qualtrics.com/jfe/form/SV_9Hr3krARf8PC3KS",
-    "survey_template_dry_blood_spot": "https://unc.az1.qualtrics.com/jfe/form/SV_b47bAEoLoUNCi8e",
+    "survey_template_evening_diary": "https://unc.az1.qualtrics.com/jfe/form/SV_9Hr3krARf8PC3KS",
 }
 
 
@@ -98,8 +95,7 @@ class SurveyTemplatesPayload(BaseModel):
     window_3: HttpUrl
     window_4: HttpUrl
     morning: HttpUrl
-    end_of_day: HttpUrl
-    dry_blood_spot: HttpUrl
+    evening_diary: HttpUrl
 
 
 @app.middleware("http")
@@ -190,8 +186,7 @@ def update_survey_template_settings(payload: SurveyTemplatesPayload):
     upsert_setting(conn, "survey_template_window_3", str(payload.window_3))
     upsert_setting(conn, "survey_template_window_4", str(payload.window_4))
     upsert_setting(conn, "survey_template_morning", str(payload.morning))
-    upsert_setting(conn, "survey_template_end_of_day", str(payload.end_of_day))
-    upsert_setting(conn, "survey_template_dry_blood_spot", str(payload.dry_blood_spot))
+    upsert_setting(conn, "survey_template_evening_diary", str(payload.evening_diary))
     conn.commit()
     conn.close()
     log_event("settings_updated", "survey_template_links")
@@ -250,10 +245,9 @@ def get_survey_templates(conn) -> dict[str, str]:
         "window_3": DEFAULT_SURVEY_TEMPLATES["survey_template_window_3"],
         "window_4": DEFAULT_SURVEY_TEMPLATES["survey_template_window_4"],
         "morning": DEFAULT_SURVEY_TEMPLATES["survey_template_morning"],
-        "end_of_day": DEFAULT_SURVEY_TEMPLATES["survey_template_end_of_day"],
-        "dry_blood_spot": DEFAULT_SURVEY_TEMPLATES["survey_template_dry_blood_spot"],
+        "evening_diary": DEFAULT_SURVEY_TEMPLATES["survey_template_evening_diary"],
     }
-    keys = list(DEFAULT_SURVEY_TEMPLATES.keys())
+    keys = list(DEFAULT_SURVEY_TEMPLATES.keys()) + ["survey_template_end_of_day"]
     placeholders = ", ".join(["%s"] * len(keys))
     rows = conn.execute(
         f"SELECT key, value FROM settings WHERE key IN ({placeholders})",
@@ -263,6 +257,10 @@ def get_survey_templates(conn) -> dict[str, str]:
         mapped_key = SURVEY_TEMPLATE_KEYS.get(row["key"])
         if mapped_key:
             result[mapped_key] = row["value"]
+        elif row["key"] == "survey_template_end_of_day" and not any(
+            setting["key"] == "survey_template_evening_diary" for setting in rows
+        ):
+            result["evening_diary"] = row["value"]
     return result
 
 
@@ -473,15 +471,15 @@ def validate_hhmm(value: str, label: str) -> None:
 
 
 def validate_additional_daily_surveys(payload: StudyIn) -> None:
-    expected_types = {"morning", "end_of_day", "dry_blood_spot"}
+    expected_types = {"morning", "evening_diary"}
     provided_types = {item.survey_type for item in payload.additional_surveys}
     if provided_types != expected_types:
         raise HTTPException(
             status_code=400,
-            detail="additional_surveys must include morning, end_of_day and dry_blood_spot",
+            detail="additional_surveys must include morning and evening_diary",
         )
     for survey in payload.additional_surveys:
-        if survey.survey_type in {"morning", "dry_blood_spot"}:
+        if survey.survey_type in expected_types:
             validate_hhmm(survey.time, f"{survey.survey_type} time")
         if not str(survey.link).strip():
             raise HTTPException(
@@ -505,12 +503,13 @@ def scheduled_datetime_for_day_time(day: date, hhmm: str) -> datetime:
 
 def normalize_additional_surveys(additional_surveys: list[dict]) -> list[dict]:
     normalized: list[dict] = []
+    has_evening_diary = any(item.get("survey_type") == "evening_diary" for item in additional_surveys)
     for survey in additional_surveys:
         item = dict(survey)
-        if item.get("survey_type") == "end_of_day":
-            item["time"] = FIXED_END_OF_DAY_TIME
+        if item.get("survey_type") == "end_of_day" and not has_evening_diary:
+            item["survey_type"] = "evening_diary"
         normalized.append(item)
-    return normalized
+    return [item for item in normalized if item.get("survey_type") not in {"end_of_day", "dry_blood_spot"}]
 
 
 def cancel_unsent_prompts(conn, participant_id: int) -> int:
@@ -555,7 +554,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
         return 0
 
     additional_surveys = json.loads(study_row.get("additional_surveys_json") or "[]")
-    survey_index_map = {"morning": 7, "end_of_day": 5, "dry_blood_spot": 6}
+    survey_index_map = {"evening_diary": 5, "end_of_day": 5, "morning": 7}
 
     scheduled_count = 0
     skipped_same_day_past_count = 0
@@ -650,8 +649,6 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
         for survey in additional_surveys:
             survey_type = (survey.get("survey_type") or "").strip()
             time_hhmm = (survey.get("time") or "").strip()
-            if survey_type == "end_of_day":
-                time_hhmm = FIXED_END_OF_DAY_TIME
             survey_link = (survey.get("link") or "").strip()
             prompt_index = survey_index_map.get(survey_type)
             if not prompt_index:
@@ -1173,11 +1170,10 @@ def list_studies():
             )
         item["window_schedules"] = by_window
 
-        additional_schedule_labels = {5: "end_of_day", 6: "dry_blood_spot", 7: "morning"}
+        additional_schedule_labels = {5: "evening_diary", 7: "morning"}
         additional_schedules: dict[str, list[dict]] = {
             "morning": [],
-            "end_of_day": [],
-            "dry_blood_spot": [],
+            "evening_diary": [],
         }
         for s in schedules:
             label = additional_schedule_labels.get(s["window_index"])
@@ -1225,7 +1221,7 @@ def create_study(payload: StudyIn):
                 [
                     {
                         "survey_type": s.survey_type,
-                        "time": FIXED_END_OF_DAY_TIME if s.survey_type == "end_of_day" else s.time,
+                        "time": s.time,
                         "link": str(s.link),
                     }
                     for s in payload.additional_surveys
@@ -1286,7 +1282,7 @@ def update_study(study_id: int, payload: StudyIn):
                 [
                     {
                         "survey_type": s.survey_type,
-                        "time": FIXED_END_OF_DAY_TIME if s.survey_type == "end_of_day" else s.time,
+                        "time": s.time,
                         "link": str(s.link),
                     }
                     for s in payload.additional_surveys

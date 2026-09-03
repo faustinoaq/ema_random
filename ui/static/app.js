@@ -10,7 +10,6 @@ async function getJSON(url, options) {
 
 const windowLinks = { 1: "", 2: "", 3: "", 4: "" };
 const APP_TIME_ZONE = "America/New_York";
-const FIXED_END_OF_DAY_TIME = "20:30";
 const LOG_DATE_TIME_FORMATTER = new Intl.DateTimeFormat([], {
   timeZone: APP_TIME_ZONE,
   year: "numeric",
@@ -27,8 +26,8 @@ const windowTimes = {
   3: { start: "14:00", end: "16:00" },
   4: { start: "16:30", end: "19:30" },
 };
-const additionalSurveyLinks = { morning: "", end_of_day: "", dry_blood_spot: "" };
-const savedAdditionalSurveyStates = { morning: false, end_of_day: false, dry_blood_spot: false };
+const additionalSurveyLinks = { morning: "", evening_diary: "" };
+const savedAdditionalSurveyStates = { morning: false, evening_diary: false };
 let activeWindow = null;
 let activeAdditionalSurveyType = "";
 
@@ -93,7 +92,7 @@ function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
   return windows;
 }
 
-function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = FIXED_END_OF_DAY_TIME) {
+function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = "20:30") {
   if (!firstWindowStart) return "08:00";
 
   const firstWindowMinutes = parseTimeToMinutes(firstWindowStart, "09:00");
@@ -107,8 +106,8 @@ function getDisplayWindowsForStudy(study) {
   const firstStart = persistedWindows[0]?.start;
   if (!firstStart) return persistedWindows;
 
-  const wakeTime = inferWakeTimeFromFirstWindowStart(firstStart, FIXED_END_OF_DAY_TIME);
-  const dynamicWindows = computeStudyWindowsFromWake(wakeTime, FIXED_END_OF_DAY_TIME);
+  const wakeTime = inferWakeTimeFromFirstWindowStart(firstStart, "20:30");
+  const dynamicWindows = computeStudyWindowsFromWake(wakeTime, "20:30");
   return dynamicWindows.map((windowRange, idx) => ({
     start: windowRange.start,
     end: windowRange.end,
@@ -125,7 +124,7 @@ function playRangeUpdatedAnimation(el) {
 
 function refreshStudyWindowLabels(
   wakeTime = document.getElementById("studyWakeTime")?.value || "08:00",
-  eodTime = eodSurveyTimeInput?.value || "20:00",
+  eodTime = eveningDiaryTimeInput?.value || "20:30",
   animate = false
 ) {
   const windows = computeStudyWindowsFromWake(wakeTime, eodTime);
@@ -150,7 +149,7 @@ function updateVisibleStudyTableRanges(wakeTime, animate = false) {
   if (!studyRows) return;
   const targetRow = studyRows.querySelector(`tr[data-study-id="${editingStudy}"]`);
   if (!targetRow) return;
-  const eodTime = eodSurveyTimeInput?.value || "20:00";
+  const eodTime = eveningDiaryTimeInput?.value || "20:30";
   const windows = computeStudyWindowsFromWake(wakeTime, eodTime);
   const tags = targetRow.querySelectorAll(".tag-window");
   tags.forEach((tag) => {
@@ -207,13 +206,10 @@ const templateWindow2 = document.getElementById("templateWindow2");
 const templateWindow3 = document.getElementById("templateWindow3");
 const templateWindow4 = document.getElementById("templateWindow4");
 const templateMorning = document.getElementById("templateMorning");
-const templateEod = document.getElementById("templateEod");
-const templateDbs = document.getElementById("templateDbs");
-const eodSurveyTimeInput = document.getElementById("eodSurveyTime");
-const dbsSurveyTimeInput = document.getElementById("dbsSurveyTime");
+const templateEveningDiary = document.getElementById("templateEveningDiary");
+const eveningDiaryTimeInput = document.getElementById("eveningDiaryTime");
 const openMorningLinkBtn = document.getElementById("openMorningLinkBtn");
-const openEodLinkBtn = document.getElementById("openEodLinkBtn");
-const openDbsLinkBtn = document.getElementById("openDbsLinkBtn");
+const openEveningDiaryLinkBtn = document.getElementById("openEveningDiaryLinkBtn");
 const openSurveyTemplatesBtn = document.getElementById("openSurveyTemplatesBtn");
 const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateModalX");
 const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
@@ -227,8 +223,7 @@ let surveyTemplateDefaults = {
   window_3: "",
   window_4: "",
   morning: "",
-  end_of_day: "",
-  dry_blood_spot: "",
+  evening_diary: "",
 };
 
 function openParticipantModal() {
@@ -252,18 +247,12 @@ function applySurveyTemplateDefaultsToStudy() {
   windowLinks[4] = surveyTemplateDefaults.window_4;
 }
 
-function enforceFixedEodTime() {
-  if (!eodSurveyTimeInput) return;
-  eodSurveyTimeInput.value = FIXED_END_OF_DAY_TIME;
-}
-
 function clearSavedStudyLinkStates() {
   for (let i = 1; i <= 4; i += 1) {
     savedWindowLinkStates[i] = false;
   }
   savedAdditionalSurveyStates.morning = false;
-  savedAdditionalSurveyStates.end_of_day = false;
-  savedAdditionalSurveyStates.dry_blood_spot = false;
+  savedAdditionalSurveyStates.evening_diary = false;
 }
 
 function openSurveyTemplateModal() {
@@ -305,26 +294,18 @@ function updateStudyLinkButtonStates() {
     playJustFilledAnimation(openMorningLinkBtn);
   }
 
-  const wasEodSaved = openEodLinkBtn.classList.contains("filled");
-  const isEodSaved = Boolean(savedAdditionalSurveyStates.end_of_day);
-  openEodLinkBtn.classList.toggle("filled", isEodSaved);
-  if (isEodSaved && !wasEodSaved) {
-    playJustFilledAnimation(openEodLinkBtn);
-  }
-
-  const wasDbsSaved = openDbsLinkBtn.classList.contains("filled");
-  const isDbsSaved = Boolean(savedAdditionalSurveyStates.dry_blood_spot);
-  openDbsLinkBtn.classList.toggle("filled", isDbsSaved);
-  if (isDbsSaved && !wasDbsSaved) {
-    playJustFilledAnimation(openDbsLinkBtn);
+  const wasEveningDiarySaved = openEveningDiaryLinkBtn?.classList.contains("filled");
+  const isEveningDiarySaved = Boolean(savedAdditionalSurveyStates.evening_diary);
+  openEveningDiaryLinkBtn?.classList.toggle("filled", isEveningDiarySaved);
+  if (isEveningDiarySaved && !wasEveningDiarySaved) {
+    playJustFilledAnimation(openEveningDiaryLinkBtn);
   }
 }
 
 function clearPendingLinkSelection() {
   windowBadges.forEach((btn) => btn.classList.remove("pending"));
   openMorningLinkBtn?.classList.remove("pending");
-  openEodLinkBtn.classList.remove("pending");
-  openDbsLinkBtn.classList.remove("pending");
+  openEveningDiaryLinkBtn?.classList.remove("pending");
 }
 
 function setPendingLinkSelection() {
@@ -338,12 +319,8 @@ function setPendingLinkSelection() {
     openMorningLinkBtn?.classList.add("pending");
     return;
   }
-  if (activeAdditionalSurveyType === "end_of_day") {
-    openEodLinkBtn.classList.add("pending");
-    return;
-  }
-  if (activeAdditionalSurveyType === "dry_blood_spot") {
-    openDbsLinkBtn.classList.add("pending");
+  if (activeAdditionalSurveyType === "evening_diary") {
+    openEveningDiaryLinkBtn?.classList.add("pending");
   }
 }
 
@@ -494,11 +471,8 @@ function getAdditionalSurveyRawLink(surveyType) {
   if (surveyType === "morning") {
     return stripPidFromUrl(additionalSurveyLinks.morning || surveyTemplateDefaults.morning || "");
   }
-  if (surveyType === "end_of_day") {
-    return stripPidFromUrl(additionalSurveyLinks.end_of_day || surveyTemplateDefaults.end_of_day || "");
-  }
-  if (surveyType === "dry_blood_spot") {
-    return stripPidFromUrl(additionalSurveyLinks.dry_blood_spot || surveyTemplateDefaults.dry_blood_spot || "");
+  if (surveyType === "evening_diary") {
+    return stripPidFromUrl(additionalSurveyLinks.evening_diary || surveyTemplateDefaults.evening_diary || "");
   }
   return "";
 }
@@ -530,7 +504,7 @@ function isValidHttpUrl(value) {
 }
 
 function refreshAdditionalSurveyPreviewLinks() {
-  // Additional survey links are edited through EOD/DBS buttons only.
+  // Additional survey links are edited through their buttons only.
 }
 
 function openAdditionalSurveyLinkEditor(surveyType) {
@@ -540,8 +514,7 @@ function openAdditionalSurveyLinkEditor(surveyType) {
   setPendingLinkSelection();
   const titles = {
     morning: "Set Link for Morning Survey",
-    end_of_day: "Set Link for EOD Survey",
-    dry_blood_spot: "Set Link for DBS Survey",
+    evening_diary: "Set Link for Evening Diary",
   };
   openLinkModal(titles[surveyType] || "Set Link for Survey", getAdditionalSurveyPreviewLink(surveyType), false);
 }
@@ -629,12 +602,10 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("endDate").value = defaults.endDate;
   document.getElementById("studyWakeTime").value = "08:00";
   document.getElementById("promptsPerDay").value = 4;
-  enforceFixedEodTime();
-  dbsSurveyTimeInput.value = "19:30";
-  refreshStudyWindowLabels("08:00", FIXED_END_OF_DAY_TIME);
+  eveningDiaryTimeInput.value = "20:30";
+  refreshStudyWindowLabels("08:00", eveningDiaryTimeInput.value);
   additionalSurveyLinks.morning = "";
-  additionalSurveyLinks.end_of_day = "";
-  additionalSurveyLinks.dry_blood_spot = "";
+  additionalSurveyLinks.evening_diary = "";
   applySurveyTemplateDefaultsToStudy();
   clearSavedStudyLinkStates();
   updateStudyLinkButtonStates();
@@ -648,12 +619,8 @@ openMorningLinkBtn?.addEventListener("click", () => {
   openAdditionalSurveyLinkEditor("morning");
 });
 
-openEodLinkBtn.addEventListener("click", () => {
-  openAdditionalSurveyLinkEditor("end_of_day");
-});
-
-openDbsLinkBtn.addEventListener("click", () => {
-  openAdditionalSurveyLinkEditor("dry_blood_spot");
+openEveningDiaryLinkBtn.addEventListener("click", () => {
+  openAdditionalSurveyLinkEditor("evening_diary");
 });
 
 document.getElementById("closeParticipantModalX").addEventListener("click", closeParticipantModal);
@@ -679,8 +646,7 @@ surveyTemplateForm.addEventListener("submit", async (e) => {
       window_3: templateWindow3.value.trim(),
       window_4: templateWindow4.value.trim(),
       morning: templateMorning.value.trim(),
-      end_of_day: templateEod.value.trim(),
-      dry_blood_spot: templateDbs.value.trim(),
+      evening_diary: templateEveningDiary.value.trim(),
     };
     const result = await getJSON("/api/settings/survey-templates", {
       method: "PUT",
@@ -753,28 +719,28 @@ studyParticipantSelect.addEventListener("change", refreshAdditionalSurveyPreview
 
 studyWakeTimeInput?.addEventListener("input", () => {
   const wakeTime = studyWakeTimeInput.value || "08:00";
-  const eodTime = eodSurveyTimeInput?.value || "20:00";
+  const eodTime = eveningDiaryTimeInput?.value || "20:30";
   refreshStudyWindowLabels(wakeTime, eodTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
 studyWakeTimeInput?.addEventListener("change", () => {
   const wakeTime = studyWakeTimeInput.value || "08:00";
-  const eodTime = eodSurveyTimeInput?.value || "20:00";
+  const eodTime = eveningDiaryTimeInput?.value || "20:30";
   refreshStudyWindowLabels(wakeTime, eodTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
-eodSurveyTimeInput?.addEventListener("input", () => {
+eveningDiaryTimeInput?.addEventListener("input", () => {
   const wakeTime = studyWakeTimeInput?.value || "08:00";
-  const eodTime = eodSurveyTimeInput.value || "20:00";
+  const eodTime = eveningDiaryTimeInput.value || "20:30";
   refreshStudyWindowLabels(wakeTime, eodTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
-eodSurveyTimeInput?.addEventListener("change", () => {
+eveningDiaryTimeInput?.addEventListener("change", () => {
   const wakeTime = studyWakeTimeInput?.value || "08:00";
-  const eodTime = eodSurveyTimeInput.value || "20:00";
+  const eodTime = eveningDiaryTimeInput.value || "20:30";
   refreshStudyWindowLabels(wakeTime, eodTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
@@ -843,8 +809,7 @@ async function loadSurveyTemplates() {
   templateWindow3.value = data.window_3 || "";
   templateWindow4.value = data.window_4 || "";
   templateMorning.value = data.morning || "";
-  templateEod.value = data.end_of_day || "";
-  templateDbs.value = data.dry_blood_spot || "";
+  templateEveningDiary.value = data.evening_diary || "";
   refreshAdditionalSurveyPreviewLinks();
 }
 
@@ -969,8 +934,7 @@ async function loadStudies() {
         .join("");
       const additionalTagConfig = {
         morning: { short: "M", label: "Morning Survey", className: "tag-morning" },
-        end_of_day: { short: "EOD", label: "End of Day Survey", className: "tag-eod" },
-        dry_blood_spot: { short: "DBS", label: "Dry Blood Spot Survey", className: "tag-dbs" },
+        evening_diary: { short: "ED", label: "Evening Diary", className: "tag-evening" },
       };
       const additionalTags = (r.additional_surveys || [])
         .map((survey) => {
@@ -1023,24 +987,20 @@ async function loadStudies() {
       document.getElementById("studyComments").value = study.comments || "";
       document.getElementById("studyWakeTime").value = inferWakeTimeFromFirstWindowStart(
         study.windows?.[0]?.start || "09:00",
-        FIXED_END_OF_DAY_TIME
+        "20:30"
       );
       const morningSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "morning");
-      const eodSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "end_of_day");
-      const dbsSurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "dry_blood_spot");
-      eodSurveyTimeInput.value = eodSurvey?.time || FIXED_END_OF_DAY_TIME;
-      enforceFixedEodTime();
-      dbsSurveyTimeInput.value = dbsSurvey?.time || "19:30";
+      const eveningDiarySurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "evening_diary");
+      eveningDiaryTimeInput.value = eveningDiarySurvey?.time || "20:30";
       additionalSurveyLinks.morning = stripPidFromUrl(morningSurvey?.link || "");
-      additionalSurveyLinks.end_of_day = stripPidFromUrl(eodSurvey?.link || "");
-      additionalSurveyLinks.dry_blood_spot = stripPidFromUrl(dbsSurvey?.link || "");
+      additionalSurveyLinks.evening_diary = stripPidFromUrl(eveningDiarySurvey?.link || "");
       clearSavedStudyLinkStates();
       for (let i = 1; i <= 4; i += 1) {
         windowLinks[i] = stripPidFromUrl(study.windows?.[i - 1]?.link || getDefaultWindowTemplate(i));
       }
       refreshStudyWindowLabels(
         document.getElementById("studyWakeTime").value || "08:00",
-        eodSurveyTimeInput.value || "20:00"
+        eveningDiaryTimeInput.value || "20:30"
       );
       updateStudyLinkButtonStates();
       refreshAdditionalSurveyPreviewLinks();
@@ -1115,7 +1075,7 @@ function exportStudiesCsv() {
     const comments = row.comments || "";
     const displayWindows = getDisplayWindowsForStudy(row);
     const wakingTime = row.windows?.[0]?.start
-      ? inferWakeTimeFromFirstWindowStart(row.windows[0].start, FIXED_END_OF_DAY_TIME)
+      ? inferWakeTimeFromFirstWindowStart(row.windows[0].start, "20:30")
       : "";
 
     const windowRangeByIndex = {};
@@ -1144,9 +1104,9 @@ function exportStudiesCsv() {
       }
     });
 
-    const dailyAdditionalTimes = { morning: {}, end_of_day: {}, dry_blood_spot: {} };
+    const dailyAdditionalTimes = { morning: {}, evening_diary: {} };
     const additionalSchedules = row.additional_schedules || {};
-    ["end_of_day", "dry_blood_spot"].forEach((surveyType) => {
+    ["evening_diary"].forEach((surveyType) => {
       (additionalSchedules[surveyType] || []).forEach((item) => {
         if (!item?.date || !item?.time) return;
         if (!dailyAdditionalTimes[surveyType][item.date]) {
@@ -1172,8 +1132,7 @@ function exportStudiesCsv() {
         dailyWindowTimeByIndex["2"]?.[studyDate] || windowRangeByIndex["2"] || "",
         dailyWindowTimeByIndex["3"]?.[studyDate] || windowRangeByIndex["3"] || "",
         dailyWindowTimeByIndex["4"]?.[studyDate] || windowRangeByIndex["4"] || "",
-        dailyAdditionalTimes.end_of_day[studyDate] || additionalSurveyTimes.end_of_day || "",
-        dailyAdditionalTimes.dry_blood_spot[studyDate] || additionalSurveyTimes.dry_blood_spot || "",
+        dailyAdditionalTimes.evening_diary[studyDate] || additionalSurveyTimes.evening_diary || "",
         comments,
       ]);
     }
@@ -1194,8 +1153,7 @@ function exportStudiesCsv() {
       "Window_2_Time",
       "Window_3_Time",
       "Window_4_Time",
-      "EOD_Survey_Time",
-      "DBS_Survey_Time",
+      "Evening_Diary_Time",
       "Comments",
     ],
     ...longRows,
@@ -1239,9 +1197,8 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     }
   }
   const wakeTime = document.getElementById("studyWakeTime").value || "08:00";
-  enforceFixedEodTime();
-  const eodTime = FIXED_END_OF_DAY_TIME;
-  refreshStudyWindowLabels(wakeTime, eodTime);
+  const eveningDiaryTime = eveningDiaryTimeInput.value || "20:30";
+  refreshStudyWindowLabels(wakeTime, eveningDiaryTime);
   const payload = {
     participant_id: Number(studyParticipantSelect.value),
     comments: document.getElementById("studyComments").value.trim(),
@@ -1261,14 +1218,9 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
         link: getAdditionalSurveyRawLink("morning"),
       },
       {
-        survey_type: "end_of_day",
-        time: FIXED_END_OF_DAY_TIME,
-        link: getAdditionalSurveyRawLink("end_of_day"),
-      },
-      {
-        survey_type: "dry_blood_spot",
-        time: dbsSurveyTimeInput.value || "19:30",
-        link: getAdditionalSurveyRawLink("dry_blood_spot"),
+        survey_type: "evening_diary",
+        time: eveningDiaryTime,
+        link: getAdditionalSurveyRawLink("evening_diary"),
       },
     ],
   };
@@ -1276,8 +1228,8 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
     openMessageModal("Participant Required", "Please select a participant.");
     return;
   }
-  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link || !payload.additional_surveys[2].link) {
-    openMessageModal("Missing Survey URLs", "Please set links for Morning, EOD and DBS surveys.");
+  if (!payload.additional_surveys[0].link || !payload.additional_surveys[1].link) {
+    openMessageModal("Missing Survey URLs", "Please set links for Morning and Evening Diary surveys.");
     return;
   }
   try {
@@ -1318,6 +1270,5 @@ async function bootstrap() {
 }
 
 bootstrap();
-enforceFixedEodTime();
 updateStudyLinkButtonStates();
 refreshAdditionalSurveyPreviewLinks();

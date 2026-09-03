@@ -496,16 +496,10 @@ li {
   color: #5648a3;
 }
 
-.tag.tag-eod {
+.tag.tag-evening {
   border-color: #9fc9b4;
   background: #eaf7f0;
   color: #2f6f4f;
-}
-
-.tag.tag-dbs {
-  border-color: #d8b28a;
-  background: #fff4e8;
-  color: #93591f;
 }
 
 .tag.time-sent {
@@ -613,30 +607,26 @@ li {
 }
 
 #openMorningLinkBtn,
-#openEodLinkBtn,
-#openDbsLinkBtn {
+#openEveningDiaryLinkBtn {
   background: #fff;
   border-color: var(--border);
 }
 
 #openMorningLinkBtn.pending,
-#openEodLinkBtn.pending,
-#openDbsLinkBtn.pending {
+#openEveningDiaryLinkBtn.pending {
   border-color: #95b3db;
   box-shadow: 0 0 0 2px rgba(149, 179, 219, 0.25);
 }
 
 #openMorningLinkBtn.filled,
-#openEodLinkBtn.filled,
-#openDbsLinkBtn.filled {
+#openEveningDiaryLinkBtn.filled {
   border-color: #9fc9b4;
   background: #f3fbf7;
 }
 
 .study-window-list .window-badge.just-filled,
 #openMorningLinkBtn.just-filled,
-#openEodLinkBtn.just-filled,
-#openDbsLinkBtn.just-filled {
+#openEveningDiaryLinkBtn.just-filled {
   animation: saved-link-pop 220ms ease-out;
 }
 

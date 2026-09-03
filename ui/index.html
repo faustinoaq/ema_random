@@ -123,14 +123,9 @@
           <div class="daily-surveys study-daily-surveys">
             <h4>Additional Daily Surveys</h4>
             <div class="daily-survey-row">
-              <label for="eodSurveyTime">End of Day Survey Time (fixed)</label>
-              <input id="eodSurveyTime" type="time" value="20:30" required readonly />
-              <button id="openEodLinkBtn" type="button" class="fit secondary">EOD</button>
-            </div>
-            <div class="daily-survey-row">
-              <label for="dbsSurveyTime">Dry Blood Spot Survey Time</label>
-              <input id="dbsSurveyTime" type="time" value="19:30" required />
-              <button id="openDbsLinkBtn" type="button" class="fit secondary">DBS</button>
+              <label for="eveningDiaryTime">Evening Diary Time</label>
+              <input id="eveningDiaryTime" type="time" value="20:30" required />
+              <button id="openEveningDiaryLinkBtn" type="button" class="fit secondary">Evening Diary</button>
             </div>
           </div>
           <div class="field study-comments-field">
@@ -196,12 +191,8 @@
             <input id="templateWindow4" type="url" placeholder="https://..." required />
           </div>
           <div class="field">
-            <label for="templateEod">End of Day (EOD)</label>
-            <input id="templateEod" type="url" placeholder="https://..." required />
-          </div>
-          <div class="field">
-            <label for="templateDbs">Dry Blood Spot (DBS)</label>
-            <input id="templateDbs" type="url" placeholder="https://..." required />
+            <label for="templateEveningDiary">Evening Diary</label>
+            <input id="templateEveningDiary" type="url" placeholder="https://..." required />
           </div>
           <div class="row">
             <button id="saveSurveyTemplatesBtn" type="submit" class="fit primary">Save Templates</button>
