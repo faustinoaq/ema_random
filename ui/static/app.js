@@ -371,7 +371,9 @@ function openLinkModal(title, value, readonly = false, scheduleItems = []) {
   linkModalTitle.textContent = title;
   windowLinkInput.value = value || "";
   windowLinkInput.readOnly = readonly;
-  document.getElementById("saveWindowLinkBtn").style.display = readonly ? "none" : "inline-block";
+  const saveWindowLinkBtn = document.getElementById("saveWindowLinkBtn");
+  saveWindowLinkBtn.textContent = activeAdditionalSurveyType === "dbs_reminder" ? "Save Message" : "Save Link";
+  saveWindowLinkBtn.style.display = readonly ? "none" : "inline-block";
   if (readonly) {
     renderWindowSchedule(scheduleItems);
   } else {

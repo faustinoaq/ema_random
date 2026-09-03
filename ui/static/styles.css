@@ -619,6 +619,7 @@ li {
 }
 
 #openMorningLinkBtn.filled,
+#openDbsReminderBtn.filled,
 #openEveningDiaryLinkBtn.filled {
   border-color: #9fc9b4;
   background: #f3fbf7;
@@ -626,6 +627,7 @@ li {
 
 .study-window-list .window-badge.just-filled,
 #openMorningLinkBtn.just-filled,
+#openDbsReminderBtn.just-filled,
 #openEveningDiaryLinkBtn.just-filled {
   animation: saved-link-pop 220ms ease-out;
 }
