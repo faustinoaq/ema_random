@@ -1393,7 +1393,15 @@ def manual_generate(participant_id: int):
 @app.get("/api/dashboard")
 def dashboard():
     conn = get_conn()
-    total_studies = conn.execute("SELECT COUNT(*) c FROM studies").fetchone()["c"]
+    active_studies = conn.execute(
+        """
+        SELECT COUNT(*) c
+        FROM studies
+        WHERE start_date::date <= (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+          AND end_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+        """,
+        (APP_TIMEZONE, APP_TIMEZONE),
+    ).fetchone()["c"]
     participants = conn.execute("SELECT COUNT(*) c FROM participants WHERE status='active'").fetchone()["c"]
     sent_today = conn.execute(
         """
@@ -1407,41 +1415,26 @@ def dashboard():
     completed_studies = conn.execute(
         """
         SELECT COUNT(*) c
-        FROM (
-            SELECT
-                s.id,
-                s.prompts_per_day,
-                GREATEST((s.end_date::date - s.start_date::date + 1), 0) AS day_count,
-                jsonb_array_length(COALESCE(NULLIF(s.additional_surveys_json, ''), '[]')::jsonb) AS additional_count,
-                COALESCE(
-                    (
-                        SELECT COUNT(*)
-                        FROM prompts p
-                        WHERE p.participant_id = s.participant_id
-                          AND p.status = 'sent'
-                          AND (
-                              p.window_index BETWEEN 1 AND s.prompts_per_day
-                              OR p.window_index IN (5, 6)
-                          )
-                          AND (p.scheduled_time::timestamptz AT TIME ZONE %s)::date
-                              BETWEEN s.start_date::date AND s.end_date::date
-                    ),
-                    0
-                ) AS sent_count
-            FROM studies s
-        ) study_status
-        WHERE study_status.day_count > 0
-          AND study_status.sent_count >= study_status.day_count * (study_status.prompts_per_day + study_status.additional_count)
+        FROM studies
+        WHERE end_date::date < (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
         """,
         (APP_TIMEZONE,),
     ).fetchone()["c"]
-    active_studies = max(total_studies - completed_studies, 0)
+    registered_studies = conn.execute(
+        """
+        SELECT COUNT(*) c
+        FROM studies
+        WHERE start_date::date > (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
+        """,
+        (APP_TIMEZONE,),
+    ).fetchone()["c"]
     conn.close()
     return {
         "active_studies": active_studies,
         "participants_enrolled": participants,
         "messages_sent_today": sent_today,
         "completed_studies": completed_studies,
+        "registered_studies": registered_studies,
     }
 
 

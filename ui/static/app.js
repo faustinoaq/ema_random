@@ -857,6 +857,7 @@ async function loadDashboard() {
   document.getElementById("participants").textContent = data.participants_enrolled;
   document.getElementById("sentToday").textContent = data.messages_sent_today;
   document.getElementById("completedStudies").textContent = data.completed_studies;
+  document.getElementById("registeredStudies").textContent = data.registered_studies;
 }
 
 async function loadParticipants() {
