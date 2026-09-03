@@ -68,11 +68,10 @@ function shiftTime(timeValue, minutesDelta, fallback = "08:00") {
   return formatTime(dt);
 }
 
-function computeStudyWindowsFromWake(wakeTime, eodTime = "20:00") {
+function computeStudyWindowsFromWake(wakeTime, emaEndTime = "18:30") {
   const intervalStart = parseTimeToDate(wakeTime, "08:00");
-  intervalStart.setMinutes(intervalStart.getMinutes() + 60);
-  const intervalEnd = parseTimeToDate(eodTime, "20:00");
-  intervalEnd.setMinutes(intervalEnd.getMinutes() - 30);
+  intervalStart.setMinutes(intervalStart.getMinutes() + 90);
+  const intervalEnd = parseTimeToDate(emaEndTime, "18:30");
   if (intervalEnd <= intervalStart) {
     intervalEnd.setTime(intervalStart.getTime() + 30 * 60 * 1000);
   }
@@ -97,8 +96,8 @@ function inferWakeTimeFromFirstWindowStart(firstWindowStart, eodTime = "20:30") 
   if (!firstWindowStart) return "08:00";
 
   const firstWindowMinutes = parseTimeToMinutes(firstWindowStart, "09:00");
-  // With 25/25/25/25 windows, window 1 starts exactly at intervalStart = wake + 60.
-  const wakeMinutes = firstWindowMinutes - 60;
+  // With 25/25/25/25 windows, window 1 starts exactly at intervalStart = wake + 90.
+  const wakeMinutes = firstWindowMinutes - 90;
   return formatMinutesToTime(wakeMinutes);
 }
 
@@ -108,7 +107,8 @@ function getDisplayWindowsForStudy(study) {
   if (!firstStart) return persistedWindows;
 
   const wakeTime = inferWakeTimeFromFirstWindowStart(firstStart, "20:30");
-  const dynamicWindows = computeStudyWindowsFromWake(wakeTime, "20:30");
+  const emaEndTime = persistedWindows[3]?.end || "18:30";
+  const dynamicWindows = computeStudyWindowsFromWake(wakeTime, emaEndTime);
   return dynamicWindows.map((windowRange, idx) => ({
     start: windowRange.start,
     end: windowRange.end,
@@ -125,10 +125,10 @@ function playRangeUpdatedAnimation(el) {
 
 function refreshStudyWindowLabels(
   wakeTime = document.getElementById("studyWakeTime")?.value || "08:00",
-  eodTime = eveningDiaryTimeInput?.value || "20:30",
+  emaEndTime = emaEndTimeInput?.value || "18:30",
   animate = false
 ) {
-  const windows = computeStudyWindowsFromWake(wakeTime, eodTime);
+  const windows = computeStudyWindowsFromWake(wakeTime, emaEndTime);
   for (let i = 1; i <= 4; i += 1) {
     windowTimes[i] = { start: windows[i - 1].start, end: windows[i - 1].end };
     const btn = document.querySelector(`#studyModal .window-badge[data-window="${i}"]`);
@@ -150,8 +150,8 @@ function updateVisibleStudyTableRanges(wakeTime, animate = false) {
   if (!studyRows) return;
   const targetRow = studyRows.querySelector(`tr[data-study-id="${editingStudy}"]`);
   if (!targetRow) return;
-  const eodTime = eveningDiaryTimeInput?.value || "20:30";
-  const windows = computeStudyWindowsFromWake(wakeTime, eodTime);
+  const emaEndTime = emaEndTimeInput?.value || "18:30";
+  const windows = computeStudyWindowsFromWake(wakeTime, emaEndTime);
   const tags = targetRow.querySelectorAll(".tag-window");
   tags.forEach((tag) => {
     const idx = Number(tag.dataset.windowIndex || "0");
@@ -218,6 +218,7 @@ const closeSurveyTemplateModalX = document.getElementById("closeSurveyTemplateMo
 const saveSurveyTemplatesBtn = document.getElementById("saveSurveyTemplatesBtn");
 const closeSurveyTemplatesBtn = document.getElementById("closeSurveyTemplatesBtn");
 const studyWakeTimeInput = document.getElementById("studyWakeTime");
+const emaEndTimeInput = document.getElementById("emaEndTime");
 let smsTargetParticipantId = null;
 let smsTargetParticipantLabel = "";
 let surveyTemplateDefaults = {
@@ -623,7 +624,8 @@ document.getElementById("openStudyModal").addEventListener("click", () => {
   document.getElementById("promptsPerDay").value = 4;
   eveningDiaryTimeInput.value = "20:30";
   dbsReminderTimeInput.value = "20:00";
-  refreshStudyWindowLabels("08:00", eveningDiaryTimeInput.value);
+  emaEndTimeInput.value = "18:30";
+  refreshStudyWindowLabels("08:00", emaEndTimeInput.value);
   additionalSurveyLinks.morning = "";
   additionalSurveyLinks.dbs_reminder = DBS_REMINDER_DEFAULT_MESSAGE;
   additionalSurveyLinks.evening_diary = "";
@@ -755,29 +757,27 @@ studyParticipantSelect.addEventListener("change", refreshAdditionalSurveyPreview
 
 studyWakeTimeInput?.addEventListener("input", () => {
   const wakeTime = studyWakeTimeInput.value || "08:00";
-  const eodTime = eveningDiaryTimeInput?.value || "20:30";
-  refreshStudyWindowLabels(wakeTime, eodTime, true);
+  const emaEndTime = emaEndTimeInput?.value || "18:30";
+  refreshStudyWindowLabels(wakeTime, emaEndTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
 studyWakeTimeInput?.addEventListener("change", () => {
   const wakeTime = studyWakeTimeInput.value || "08:00";
-  const eodTime = eveningDiaryTimeInput?.value || "20:30";
-  refreshStudyWindowLabels(wakeTime, eodTime, true);
+  const emaEndTime = emaEndTimeInput?.value || "18:30";
+  refreshStudyWindowLabels(wakeTime, emaEndTime, true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
-eveningDiaryTimeInput?.addEventListener("input", () => {
+emaEndTimeInput?.addEventListener("input", () => {
   const wakeTime = studyWakeTimeInput?.value || "08:00";
-  const eodTime = eveningDiaryTimeInput.value || "20:30";
-  refreshStudyWindowLabels(wakeTime, eodTime, true);
+  refreshStudyWindowLabels(wakeTime, emaEndTimeInput.value || "18:30", true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
-eveningDiaryTimeInput?.addEventListener("change", () => {
+emaEndTimeInput?.addEventListener("change", () => {
   const wakeTime = studyWakeTimeInput?.value || "08:00";
-  const eodTime = eveningDiaryTimeInput.value || "20:30";
-  refreshStudyWindowLabels(wakeTime, eodTime, true);
+  refreshStudyWindowLabels(wakeTime, emaEndTimeInput.value || "18:30", true);
   updateVisibleStudyTableRanges(wakeTime, true);
 });
 
@@ -1030,6 +1030,7 @@ async function loadStudies() {
       const dbsReminder = (study.additional_surveys || []).find((s) => s?.survey_type === "dbs_reminder");
       const eveningDiarySurvey = (study.additional_surveys || []).find((s) => s?.survey_type === "evening_diary");
       dbsReminderTimeInput.value = dbsReminder?.time || "20:00";
+      emaEndTimeInput.value = study.windows?.[3]?.end || "18:30";
       eveningDiaryTimeInput.value = eveningDiarySurvey?.time || "20:30";
       additionalSurveyLinks.morning = stripPidFromUrl(morningSurvey?.link || "");
       additionalSurveyLinks.dbs_reminder = dbsReminder?.message || DBS_REMINDER_DEFAULT_MESSAGE;
@@ -1040,7 +1041,7 @@ async function loadStudies() {
       }
       refreshStudyWindowLabels(
         document.getElementById("studyWakeTime").value || "08:00",
-        eveningDiaryTimeInput.value || "20:30"
+        emaEndTimeInput.value || "18:30"
       );
       updateStudyLinkButtonStates();
       refreshAdditionalSurveyPreviewLinks();
@@ -1240,7 +1241,7 @@ document.getElementById("studyForm").addEventListener("submit", async (e) => {
   }
   const wakeTime = document.getElementById("studyWakeTime").value || "08:00";
   const eveningDiaryTime = eveningDiaryTimeInput.value || "20:30";
-  refreshStudyWindowLabels(wakeTime, eveningDiaryTime);
+  refreshStudyWindowLabels(wakeTime, emaEndTimeInput.value || "18:30");
   const payload = {
     participant_id: Number(studyParticipantSelect.value),
     comments: document.getElementById("studyComments").value.trim(),
