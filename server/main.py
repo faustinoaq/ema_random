@@ -320,9 +320,18 @@ def prompt_delivery_enabled() -> bool:
 
 
 def build_prompt_sms_body(survey_link: str, window_index: int | None = None) -> str:
-    if window_index == 6:
-        return survey_link
-    return f"Please complete your survey: {survey_link}"
+    prompt_messages = {
+        1: "Please complete your first check-in:",
+        2: "Please complete your second check-in:",
+        3: "Please complete your third check-in:",
+        4: "Please complete your fourth check-in:",
+        5: "Good Evening! Please complete your survey:",
+        7: "Good morning! Please complete your survey:",
+    }
+    prefix = prompt_messages.get(window_index)
+    if prefix:
+        return f"{prefix} {survey_link}"
+    return survey_link
 
 
 def random_time_within_range(start_dt: datetime, end_dt: datetime) -> datetime:
@@ -509,6 +518,13 @@ def study_date_range(study_row) -> list[date]:
 def scheduled_datetime_for_day_time(day: date, hhmm: str) -> datetime:
     validate_hhmm(hhmm, "additional survey time")
     return datetime.fromisoformat(f"{day.isoformat()}T{hhmm}:00").replace(tzinfo=LOCAL_TZ)
+
+
+def scheduled_datetime_for_additional_survey(day: date, survey_type: str, hhmm: str) -> datetime:
+    scheduled_dt = scheduled_datetime_for_day_time(day, hhmm)
+    if survey_type == "morning":
+        scheduled_dt += timedelta(minutes=15)
+    return scheduled_dt
 
 
 def normalize_additional_surveys(additional_surveys: list[dict]) -> list[dict]:
@@ -701,7 +717,7 @@ def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) ->
                     continue
 
             try:
-                scheduled_dt_obj = scheduled_datetime_for_day_time(day, time_hhmm)
+                scheduled_dt_obj = scheduled_datetime_for_additional_survey(day, survey_type, time_hhmm)
             except HTTPException:
                 log_event("schedule_skipped", f"study_id={study_row['id']} invalid {survey_type} time={time_hhmm}")
                 continue
