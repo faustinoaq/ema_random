@@ -980,7 +980,13 @@ async function loadStudies() {
           const cfg = additionalTagConfig[survey?.survey_type || ""];
           if (!cfg) return "";
           const schedule = r.additional_schedules?.[survey.survey_type] || [];
-          const timeLabel = survey?.time || (survey?.survey_type === "dbs_reminder" ? "Random" : "--:--");
+          const timeLabel = survey?.time
+            ? survey.survey_type === "morning"
+              ? shiftTime(survey.time, 15)
+              : survey.time
+            : survey?.survey_type === "dbs_reminder"
+              ? "Random"
+              : "--:--";
           return `<button type="button" class="tag button-tag ${cfg.className}" data-link="${encodeAttr(survey.link || "")}" data-participant-pid="${encodeAttr(r.participant_code || "")}" data-label="${cfg.label}" data-schedule="${encodeAttr(JSON.stringify(schedule))}">${cfg.short} ${timeLabel}</button>`;
         })
         .join("");
@@ -1120,6 +1126,7 @@ function exportStudiesCsv() {
     const wakingTime = row.windows?.[0]?.start
       ? inferWakeTimeFromFirstWindowStart(row.windows[0].start, "20:30")
       : "";
+    const morningSurveyTime = wakingTime ? shiftTime(wakingTime, 15) : "";
 
     const windowRangeByIndex = {};
     displayWindows.forEach((window, idx) => {
@@ -1171,6 +1178,7 @@ function exportStudiesCsv() {
         studyDate,
         dayNumber,
         wakingTime,
+        morningSurveyTime,
         dailyWindowTimeByIndex["1"]?.[studyDate] || windowRangeByIndex["1"] || "",
         dailyWindowTimeByIndex["2"]?.[studyDate] || windowRangeByIndex["2"] || "",
         dailyWindowTimeByIndex["3"]?.[studyDate] || windowRangeByIndex["3"] || "",
@@ -1193,6 +1201,7 @@ function exportStudiesCsv() {
       "Study_Date",
       "Day_Number",
       "Waking_Time",
+      "Morning_Survey_Time",
       "Window_1_Time",
       "Window_2_Time",
       "Window_3_Time",
