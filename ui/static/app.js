@@ -997,8 +997,10 @@ async function loadStudies() {
         <td>${r.comments || "-"}</td>
         <td><div class="stacked-tags">${windows}${additionalTags}</div></td>
         <td>
-          <button type="button" class="secondary action edit-study" data-id="${r.id}">Edit</button>
-          <button type="button" class="secondary action regenerate-study" data-participant-id="${r.participant_id}" data-participant-code="${encodeAttr(r.participant_code || `#${r.participant_id || "-"}`)}">Regenerate Times</button>
+          <span class="tag ${r.status === "stopped" ? "tag-dbs" : "tag-morning"}">${r.status === "stopped" ? "Stopped" : "Active"}</span>
+          ${r.status === "active" ? `<button type="button" class="secondary action edit-study" data-id="${r.id}">Edit</button>
+          <button type="button" class="secondary action stop-study" data-id="${r.id}" data-participant-code="${encodeAttr(r.participant_code || `#${r.participant_id || "-"}`)}">Stop Study</button>
+          <button type="button" class="secondary action regenerate-study" data-participant-id="${r.participant_id}" data-participant-code="${encodeAttr(r.participant_code || `#${r.participant_id || "-"}`)}">Regenerate Times</button>` : ""}
           <button type="button" class="secondary action delete-study" data-id="${r.id}">Remove</button>
         </td>
       </tr>`;
@@ -1072,6 +1074,21 @@ async function loadStudies() {
           await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
         },
         "Generate"
+      );
+    });
+  });
+  body.querySelectorAll(".stop-study").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      const participantCode = decodeURIComponent(btn.dataset.participantCode || "participant");
+      openConfirmModal(
+        "Stop Study",
+        `This will cancel all future prompts for ${participantCode} and preserve the study history. Continue?`,
+        async () => {
+          await getJSON(`/api/studies/${id}/stop`, { method: "POST" });
+          await Promise.all([loadDashboard(), loadLogs(), loadStudies()]);
+        },
+        "Stop Study"
       );
     });
   });

@@ -59,7 +59,9 @@ def init_db() -> None:
             end_date TEXT NOT NULL,
             prompts_per_day INTEGER NOT NULL DEFAULT 4,
             windows_json TEXT NOT NULL DEFAULT '[]',
-            additional_surveys_json TEXT NOT NULL DEFAULT '[]'
+            additional_surveys_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'active',
+            stopped_at TEXT
         )
         """
     )
@@ -68,6 +70,20 @@ def init_db() -> None:
         """
         ALTER TABLE studies
         ADD COLUMN IF NOT EXISTS additional_surveys_json TEXT NOT NULL DEFAULT '[]'
+        """
+    )
+
+    cur.execute(
+        """
+        ALTER TABLE studies
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
+        """
+    )
+
+    cur.execute(
+        """
+        ALTER TABLE studies
+        ADD COLUMN IF NOT EXISTS stopped_at TEXT
         """
     )
 

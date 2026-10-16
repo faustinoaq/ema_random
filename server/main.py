@@ -552,6 +552,9 @@ def cancel_unsent_prompts(conn, participant_id: int) -> int:
 
 
 def regenerate_study_schedule(conn, study_row, overwrite_unsent: bool = True) -> int:
+    if study_row.get("status", "active") != "active":
+        return 0
+
     participant = conn.execute(
         "SELECT id, participant_id FROM participants WHERE id = %s AND status = 'active'",
         (study_row["participant_id"],),
@@ -1361,6 +1364,39 @@ def delete_study(study_id: int):
     conn.close()
     log_event("study_deleted", f"id={study_id} cancelled_prompts={cancelled.rowcount}")
     return {"ok": True}
+
+
+@app.post("/api/studies/{study_id}/stop")
+def stop_study(study_id: int):
+    conn = get_conn()
+    study = conn.execute(
+        "SELECT participant_id, status FROM studies WHERE id = %s", (study_id,)
+    ).fetchone()
+    if study is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Study not found")
+    if study["status"] != "active":
+        conn.close()
+        return {"ok": True, "status": study["status"]}
+
+    cancelled = conn.execute(
+        """
+        UPDATE prompts
+        SET status = 'cancelled'
+        WHERE participant_id = %s
+          AND status IN ('scheduled', 'sending')
+        """,
+        (study["participant_id"],),
+    )
+    stopped_at = datetime.now(LOCAL_TZ).isoformat()
+    conn.execute(
+        "UPDATE studies SET status = 'stopped', stopped_at = %s WHERE id = %s",
+        (stopped_at, study_id),
+    )
+    conn.commit()
+    conn.close()
+    log_event("study_stopped", f"id={study_id} cancelled_prompts={cancelled.rowcount}")
+    return {"ok": True, "status": "stopped", "stopped_at": stopped_at}
 
 
 @app.get("/api/logs")
